@@ -48,15 +48,15 @@ describe('parseRow', () => {
 
   it('keeps date as string', () => {
     const columns: ColumnMeta[] = [{ name: 'day', type: 'date', nullable: false }];
-    const row = parseRow<{ day: string }>(columns, ['2024-01-15']);
-    expect(row.day).toBe('2024-01-15');
+    const row = parseRow<{ day: string }>(columns, ['2022-02-22']);
+    expect(row.day).toBe('2022-02-22');
   });
 
   it('parses timestamp to Date', () => {
     const columns: ColumnMeta[] = [{ name: 'ts', type: 'timestamp', nullable: false }];
-    const row = parseRow<{ ts: Date }>(columns, ['2024-01-15 10:30:00.000']);
+    const row = parseRow<{ ts: Date }>(columns, ['2022-02-22 22:02:22.000']);
     expect(row.ts).toBeInstanceOf(Date);
-    expect(row.ts.getFullYear()).toBe(2024);
+    expect(row.ts.getFullYear()).toBe(2022);
   });
 
   it('parses null/empty to null', () => {
