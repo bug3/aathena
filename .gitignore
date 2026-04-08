@@ -17,5 +17,8 @@ Thumbs.db
 .env
 .env.*
 
+# Playground
+playground/
+
 # Claude
 .claude/
