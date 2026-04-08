@@ -15,6 +15,7 @@ export interface GlueColumn {
   name: string;
   type: string;
   comment?: string;
+  nullable: boolean;
 }
 
 export async function fetchTableSchema(
@@ -32,11 +33,11 @@ export async function fetchTableSchema(
   );
 
   const columns: GlueColumn[] = (result.Table?.StorageDescriptor?.Columns ?? [])
-    .map(mapColumn);
+    .map((col) => mapColumn(col, true));
 
-  // Include partition keys as columns too
+  // Partition keys are NOT NULL in Athena
   const partitionKeys = (result.Table?.PartitionKeys ?? [])
-    .map(mapColumn);
+    .map((col) => mapColumn(col, false));
 
   return {
     database,
@@ -71,10 +72,11 @@ export async function fetchAllTables(
   return tableNames;
 }
 
-function mapColumn(col: Column): GlueColumn {
+function mapColumn(col: Column, nullable: boolean): GlueColumn {
   return {
     name: col.Name ?? '',
     type: col.Type ?? 'string',
     comment: col.Comment,
+    nullable,
   };
 }

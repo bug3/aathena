@@ -10,12 +10,12 @@ describe('generateTypeFile', () => {
       database: 'sampledb',
       tableName: 'events',
       columns: [
-        { name: 'event_id', type: 'integer' },
-        { name: 'event_name', type: 'varchar' },
-        { name: 'is_active', type: 'boolean' },
-        { name: 'price', type: 'decimal(10,2)' },
-        { name: 'created_at', type: 'timestamp' },
-        { name: 'tags', type: 'array<varchar>' },
+        { name: 'event_id', type: 'integer', nullable: false },
+        { name: 'event_name', type: 'varchar', nullable: true },
+        { name: 'is_active', type: 'boolean', nullable: false },
+        { name: 'price', type: 'decimal(10,2)', nullable: true },
+        { name: 'created_at', type: 'timestamp', nullable: true },
+        { name: 'tags', type: 'array<varchar>', nullable: true },
       ],
     };
 
@@ -23,11 +23,11 @@ describe('generateTypeFile', () => {
 
     expect(output).toContain('export interface Events {');
     expect(output).toContain('event_id: number;');
-    expect(output).toContain('event_name: string;');
+    expect(output).toContain('event_name: string | null;');
     expect(output).toContain('is_active: boolean;');
-    expect(output).toContain('price: string;');
-    expect(output).toContain('created_at: Date;');
-    expect(output).toContain('tags: string[];');
+    expect(output).toContain('price: string | null;');
+    expect(output).toContain('created_at: Date | null;');
+    expect(output).toContain('tags: string[] | null;');
     expect(output).toContain('Source: sampledb.events');
     expect(output).toContain('do not edit');
   });

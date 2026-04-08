@@ -15,8 +15,9 @@ export function generateTypeFile(schema: TableSchema): string {
 
   for (const col of schema.columns) {
     const tsType = athenaTypeToTS(col.type);
+    const fullType = col.nullable ? `${tsType} | null` : tsType;
     const comment = col.comment ? ` // ${col.comment}` : typeComment(col.type, tsType);
-    lines.push(`  ${col.name}: ${tsType};${comment}`);
+    lines.push(`  ${col.name}: ${fullType};${comment}`);
   }
 
   lines.push('}', '');
