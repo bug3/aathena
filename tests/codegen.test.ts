@@ -7,7 +7,7 @@ import type { TableSchema } from '../src/codegen/glue-fetcher';
 describe('generateTypeFile', () => {
   it('generates interface from table schema', () => {
     const schema: TableSchema = {
-      database: 'mydb',
+      database: 'sampledb',
       tableName: 'events',
       columns: [
         { name: 'event_id', type: 'integer' },
@@ -28,7 +28,7 @@ describe('generateTypeFile', () => {
     expect(output).toContain('price: string;');
     expect(output).toContain('created_at: Date;');
     expect(output).toContain('tags: string[];');
-    expect(output).toContain('Source: mydb.events');
+    expect(output).toContain('Source: sampledb.events');
     expect(output).toContain('do not edit');
   });
 });
@@ -39,20 +39,20 @@ describe('generateQueryFile', () => {
     const parsed = parseSQL(sql);
 
     const output = generateQueryFile({
-      sqlRelativePath: 'tables/mydb/events/product.sql',
+      sqlRelativePath: 'tables/sampledb/events/product.sql',
       tableName: 'events',
-      database: 'mydb',
+      database: 'sampledb',
       parsed,
-      typesImportPath: '../../types/mydb/events',
+      typesImportPath: '../../types/sampledb/events',
     });
 
     expect(output).toContain("import { createQuery } from 'aathena/runtime'");
-    expect(output).toContain("import type { Events } from '../../types/mydb/events'");
+    expect(output).toContain("import type { Events } from '../../types/sampledb/events'");
     expect(output).toContain('export interface ProductParams {');
     expect(output).toContain('status: string;');
     expect(output).toContain('limit: number;');
     expect(output).toContain('export const product = createQuery');
-    expect(output).toContain('tables/mydb/events/product.sql');
+    expect(output).toContain('tables/sampledb/events/product.sql');
   });
 
   it('generates query file with @param annotations and schema', () => {
@@ -62,11 +62,11 @@ SELECT * FROM events WHERE status = '{{status}}' LIMIT {{limit}}`;
     const parsed = parseSQL(sql);
 
     const output = generateQueryFile({
-      sqlRelativePath: 'tables/mydb/events/product.sql',
+      sqlRelativePath: 'tables/sampledb/events/product.sql',
       tableName: 'events',
-      database: 'mydb',
+      database: 'sampledb',
       parsed,
-      typesImportPath: '../../types/mydb/events',
+      typesImportPath: '../../types/sampledb/events',
     });
 
     expect(output).toContain("status: 'active' | 'pending';");
@@ -80,11 +80,11 @@ SELECT * FROM events WHERE status = '{{status}}' LIMIT {{limit}}`;
     const parsed = parseSQL(sql);
 
     const output = generateQueryFile({
-      sqlRelativePath: 'tables/mydb/events/count.sql',
+      sqlRelativePath: 'tables/sampledb/events/count.sql',
       tableName: 'events',
-      database: 'mydb',
+      database: 'sampledb',
       parsed,
-      typesImportPath: '../../types/mydb/events',
+      typesImportPath: '../../types/sampledb/events',
     });
 
     expect(output).toContain('Record<string, never>');
