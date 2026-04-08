@@ -2,7 +2,7 @@ export interface AathenaConfig {
   region?: string;
   database: string;
   workgroup?: string;
-  outputLocation: string;
+  outputLocation?: string;
   tablesDir?: string;
   outDir?: string;
   query?: {
