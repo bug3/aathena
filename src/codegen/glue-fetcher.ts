@@ -1,7 +1,6 @@
 import {
   GlueClient,
   GetTableCommand,
-  GetTablesCommand,
   type Column,
 } from '@aws-sdk/client-glue';
 
@@ -46,31 +45,6 @@ export async function fetchTableSchema(
   };
 }
 
-export async function fetchAllTables(
-  region: string | undefined,
-  database: string,
-): Promise<string[]> {
-  const glue = new GlueClient({ region });
-  const tableNames: string[] = [];
-  let nextToken: string | undefined;
-
-  do {
-    const result = await glue.send(
-      new GetTablesCommand({
-        DatabaseName: database,
-        NextToken: nextToken,
-      }),
-    );
-
-    for (const table of result.TableList ?? []) {
-      if (table.Name) tableNames.push(table.Name);
-    }
-
-    nextToken = result.NextToken;
-  } while (nextToken);
-
-  return tableNames;
-}
 
 function mapColumn(col: Column, nullable: boolean): GlueColumn {
   return {
