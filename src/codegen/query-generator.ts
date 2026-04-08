@@ -82,7 +82,7 @@ function schemaExpression(param: ParsedParam): string {
 
   switch (param.schemaType) {
     case 'enum':
-      return `schema.enum(${param.enumValues!.map((v) => `'${v}'`).join(', ')})`;
+      return `schema.enum(${(param.enumValues ?? []).map((v) => `'${v}'`).join(', ')})`;
     case 'positiveInt':
       return 'schema.positiveInt';
     case 'isoDate':

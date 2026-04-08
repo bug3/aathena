@@ -1,5 +1,21 @@
 node_modules/
 dist/
 generated/
+coverage/
 *.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# Environment
 .env
+.env.*
+
+# Claude
+.claude/

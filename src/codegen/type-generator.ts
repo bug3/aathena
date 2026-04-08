@@ -24,7 +24,7 @@ export function generateTypeFile(schema: TableSchema): string {
   return lines.join('\n');
 }
 
-function typeComment(athenaType: string, tsType: string): string {
+function typeComment(athenaType: string, _tsType: string): string {
   const t = athenaType.toLowerCase();
   // Add comments for non-obvious mappings
   if (t.startsWith('decimal')) return ' // decimal → string (precision safe)';
