@@ -78,6 +78,35 @@ describe('parseRow', () => {
     expect(row).toEqual({ id: 1, name: 'test', active: true });
   });
 
+  it('parses array type via JSON', () => {
+    const columns: ColumnMeta[] = [{ name: 'tags', type: 'array<varchar>', nullable: false }];
+    const row = parseRow<{ tags: string[] }>(columns, ['["a","b","c"]']);
+    expect(row.tags).toEqual(['a', 'b', 'c']);
+  });
+
+  it('parses map type via JSON', () => {
+    const columns: ColumnMeta[] = [{ name: 'meta', type: 'map<string,integer>', nullable: false }];
+    const row = parseRow<{ meta: Record<string, number> }>(columns, ['{"x":1,"y":2}']);
+    expect(row.meta).toEqual({ x: 1, y: 2 });
+  });
+
+  it('parses struct type via JSON', () => {
+    const columns: ColumnMeta[] = [{ name: 'addr', type: 'struct<city:string,zip:integer>', nullable: false }];
+    const row = parseRow<{ addr: { city: string; zip: number } }>(columns, ['{"city":"NYC","zip":10001}']);
+    expect(row.addr).toEqual({ city: 'NYC', zip: 10001 });
+  });
+
+  it('parses nested array type', () => {
+    const columns: ColumnMeta[] = [{ name: 'matrix', type: 'array<array<integer>>', nullable: false }];
+    const row = parseRow<{ matrix: number[][] }>(columns, ['[[1,2],[3,4]]']);
+    expect(row.matrix).toEqual([[1, 2], [3, 4]]);
+  });
+
+  it('throws ColumnParseError for invalid complex type', () => {
+    const columns: ColumnMeta[] = [{ name: 'tags', type: 'array<varchar>', nullable: false }];
+    expect(() => parseRow(columns, ['{invalid json'])).toThrow(ColumnParseError);
+  });
+
   it('throws ColumnParseError for invalid integer', () => {
     const columns: ColumnMeta[] = [{ name: 'id', type: 'integer', nullable: false }];
     expect(() => parseRow(columns, ['not_a_number'])).toThrow(ColumnParseError);
