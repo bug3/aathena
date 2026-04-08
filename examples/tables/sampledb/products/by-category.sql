@@ -1,5 +1,5 @@
 -- Complex types: array, map and struct columns are fully typed.
--- Athena returns these as flat strings — aathena parses them automatically.
+-- Athena returns these as flat strings, aathena parses them automatically.
 
 -- @param category string
 

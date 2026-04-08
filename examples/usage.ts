@@ -64,7 +64,7 @@ try {
 
 // --- Complex types (array, map, struct) ---
 // Athena returns complex types as flat strings.
-// aathena parses them automatically — you get real arrays, records, and objects.
+// aathena parses them automatically, you get real arrays, records, and objects.
 
 const products = await byCategory(athena, {
   category: 'electronics',

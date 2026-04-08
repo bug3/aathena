@@ -43,8 +43,8 @@ export class AathenaClient {
 /**
  * Create an Athena client.
  *
- * - `createClient()` — reads from aathena.config.json automatically
- * - `createClient(config)` — uses the provided config
+ * - `createClient()` - reads from aathena.config.json automatically
+ * - `createClient(config)` - uses the provided config
  */
 export function createClient(config?: AathenaConfig): AathenaClient {
   return new AathenaClient(config ?? loadConfig());
