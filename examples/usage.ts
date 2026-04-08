@@ -11,7 +11,7 @@
 import { createClient, QueryTimeoutError, QueryFailedError } from 'aathena';
 
 // Import generated query functions (created by `npx aathena generate`)
-import { byStatus, byDateRange, totalRevenue } from './generated';
+import { byStatus, byDateRange, totalRevenue, byCategory } from './generated';
 
 // No config needed - reads from aathena.config.json automatically
 const athena = createClient();
@@ -60,6 +60,34 @@ try {
   if (err instanceof QueryFailedError) {
     console.error(`Athena error: ${err.athenaErrorMessage}`);
   }
+}
+
+// --- Complex types (array, map, struct) ---
+// Athena returns complex types as flat strings.
+// aathena parses them automatically — you get real arrays, records, and objects.
+
+const products = await byCategory(athena, {
+  category: 'electronics',
+  limit: 10,
+});
+
+for (const row of products.rows) {
+  console.log(row.product_id);   // number
+  console.log(row.name);         // string | null
+
+  // array<varchar> → string[]
+  console.log(row.tags);                // string[] | null
+  console.log(row.tags?.[0]);           // string
+
+  // map<string,string> → Record<string, string>
+  console.log(row.attributes);          // Record<string, string> | null
+  console.log(row.attributes?.['color']); // string
+
+  // struct<city:string,zip:integer,country:string> → typed object
+  console.log(row.shipping_address);           // { city: string; zip: number; country: string } | null
+  console.log(row.shipping_address?.city);     // string
+  console.log(row.shipping_address?.zip);      // number
+  console.log(row.shipping_address?.country);  // string
 }
 
 // --- Query statistics ---
