@@ -1,7 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { generate } from '../codegen/generate';
-import type { AathenaConfig } from '../runtime/types';
+import { loadConfig } from '../runtime/config';
 
 const HELP = `
 aathena - Type-safe AWS Athena client with codegen
@@ -51,18 +49,6 @@ async function main() {
   console.error(`Unknown command: ${command}`);
   console.log(HELP);
   process.exit(1);
-}
-
-function loadConfig(cwd: string): AathenaConfig {
-  const configPath = resolve(cwd, 'aathena.config.json');
-  try {
-    const raw = readFileSync(configPath, 'utf-8');
-    return JSON.parse(raw) as AathenaConfig;
-  } catch {
-    console.error(`Error: Could not load ${configPath}`);
-    console.error('Create an aathena.config.json in your project root.');
-    process.exit(1);
-  }
 }
 
 main().catch((err) => {
