@@ -48,6 +48,7 @@ describe('athenaTypeToTS', () => {
   it('maps map types', () => {
     expect(athenaTypeToTS('map<string, integer>')).toBe('Record<string, number>');
     expect(athenaTypeToTS('map<string, string>')).toBe('Record<string, string>');
+    expect(athenaTypeToTS('map<string, map<string, integer>>')).toBe('Record<string, Record<string, number>>');
   });
 
   it('maps struct types', () => {

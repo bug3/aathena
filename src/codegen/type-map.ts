@@ -29,9 +29,10 @@ export function athenaTypeToTS(athenaType: string): string {
     return `${athenaTypeToTS(arrayMatch[1])}[]`;
   }
 
-  const mapMatch = t.match(/^map<(.+?),\s*(.+)>$/);
+  const mapMatch = t.match(/^map<(.+)>$/);
   if (mapMatch) {
-    return `Record<${athenaTypeToTS(mapMatch[1])}, ${athenaTypeToTS(mapMatch[2])}>`;
+    const [keyType, valueType] = splitMapTypes(mapMatch[1]);
+    return `Record<${athenaTypeToTS(keyType)}, ${athenaTypeToTS(valueType)}>`;
   }
 
   const structMatch = t.match(/^struct<(.+)>$/);
@@ -41,6 +42,18 @@ export function athenaTypeToTS(athenaType: string): string {
 
   // Unknown → string fallback
   return 'string';
+}
+
+function splitMapTypes(inner: string): [string, string] {
+  let depth = 0;
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] === '<') depth++;
+    if (inner[i] === '>') depth--;
+    if (inner[i] === ',' && depth === 0) {
+      return [inner.slice(0, i).trim(), inner.slice(i + 1).trim()];
+    }
+  }
+  return [inner, 'string'];
 }
 
 function parseStructType(fields: string): string {
