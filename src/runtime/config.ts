@@ -7,19 +7,14 @@ export function defineConfig(config: AathenaConfig): AathenaConfig {
 }
 
 export function loadConfig(cwd: string = process.cwd()): AathenaConfig {
-  const configPath = resolve(cwd, 'aathena.config.ts');
+  const configPath = resolve(cwd, 'aathena.config.json');
 
-  // For runtime usage, read the config as JSON or use dynamic import
-  // In practice, the CLI will handle .ts config via tsx/jiti
   try {
-    // Try JSON config first
-    const jsonPath = resolve(cwd, 'aathena.config.json');
-    const raw = readFileSync(jsonPath, 'utf-8');
+    const raw = readFileSync(configPath, 'utf-8');
     return JSON.parse(raw) as AathenaConfig;
   } catch {
     throw new Error(
-      `Could not load aathena config. Expected aathena.config.json at ${cwd}. ` +
-      `Config path attempted: ${configPath}`,
+      `Could not load aathena config. Expected aathena.config.json at ${cwd}.`,
     );
   }
 }
