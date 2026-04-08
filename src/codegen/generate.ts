@@ -194,12 +194,28 @@ function generateBarrelIndex(
 
   lines.push('', '// Queries');
 
+  // Detect duplicate query names across tables
+  const nameCount = new Map<string, number>();
+  for (const file of sqlFiles) {
+    const name = camelCase(file.queryName);
+    nameCount.set(name, (nameCount.get(name) ?? 0) + 1);
+  }
+
   for (const file of sqlFiles) {
     const queryFnName = camelCase(file.queryName);
     const importPath = `./queries/${file.relativeDirFromTables}/${file.queryName}`;
-    lines.push(
-      `export { ${queryFnName} } from '${importPath}';`,
-    );
+
+    if ((nameCount.get(queryFnName) ?? 0) > 1) {
+      // Prefix with table name to avoid duplicate exports
+      const aliasName = camelCase(file.tableName) + pascalCase(file.queryName);
+      lines.push(
+        `export { ${queryFnName} as ${aliasName} } from '${importPath}';`,
+      );
+    } else {
+      lines.push(
+        `export { ${queryFnName} } from '${importPath}';`,
+      );
+    }
   }
 
   lines.push('');
