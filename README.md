@@ -207,7 +207,7 @@ result.rows[0].address.city  // string, direct access just like the source data
 | `region` | AWS default | AWS region |
 | `database` | *required* | Default Athena database |
 | `workgroup` | - | Athena workgroup |
-| `outputLocation` | *required* | S3 path for query results |
+| `outputLocation` | - | S3 path for query results (optional if workgroup has a default) |
 | `tablesDir` | `./tables` | SQL files directory |
 | `outDir` | `./generated` | Codegen output directory |
 | `query.timeout` | `300000` | Query timeout in ms (5 min) |

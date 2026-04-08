@@ -40,7 +40,7 @@ export async function executeQuery(
   sql: string,
   database: string,
   workgroup: string | undefined,
-  outputLocation: string,
+  outputLocation: string | undefined,
   options: LifecycleOptions = {},
 ): Promise<QueryOutput> {
   const timeout = options.timeout ?? DEFAULT_TIMEOUT;
@@ -53,7 +53,7 @@ export async function executeQuery(
       QueryString: sql,
       QueryExecutionContext: { Database: database },
       WorkGroup: workgroup,
-      ResultConfiguration: { OutputLocation: outputLocation },
+      ...(outputLocation && { ResultConfiguration: { OutputLocation: outputLocation } }),
     }),
   );
 
