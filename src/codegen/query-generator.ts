@@ -78,7 +78,11 @@ export function generateQueryFile(input: QueryGenInput): string {
 }
 
 function schemaExpression(param: ParsedParam): string {
-  if (!param.schemaType) return `schema.string`;
+  if (!param.schemaType) {
+    if (param.type === 'number') return 'schema.number';
+    if (param.type === 'boolean') return 'schema.boolean';
+    return 'schema.string';
+  }
 
   switch (param.schemaType) {
     case 'enum':
