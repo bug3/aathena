@@ -48,7 +48,7 @@ console.log(`Found ${filtered.rows.length} events`);
 const revenue = await totalRevenue(athena, {});
 
 for (const row of revenue.rows) {
-  console.log(`${row.day}: ${row.total_revenue}`);
+  console.log(`${row.event_name}: ${row.price}`);
 }
 
 // --- Error handling ---
