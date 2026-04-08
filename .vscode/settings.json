@@ -1,0 +1,13 @@
+{
+  "[sql]": {
+    "editor.defaultFormatter": "ReneSaarsoo.sql-formatter-vsc",
+    "editor.formatOnSave": true
+  },
+  "SQL-Formatter-VSCode.dialect": "trino",
+  "SQL-Formatter-VSCode.keywordCase": "upper",
+  "SQL-Formatter-VSCode.functionCase": "upper",
+  "SQL-Formatter-VSCode.dataTypeCase": "upper",
+  "SQL-Formatter-VSCode.paramTypes": {
+    "custom": [{ "regex": "\\{\\{[a-zA-Z_][a-zA-Z0-9_]*\\}\\}" }]
+  }
+}
