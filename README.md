@@ -67,10 +67,7 @@ generated/
 import { createClient } from 'aathena';
 import { product } from './generated';
 
-const athena = createClient({
-  database: 'sampledb',
-  outputLocation: 's3://my-bucket/athena-results/',
-});
+const athena = createClient(); // reads from aathena.config.json
 
 const result = await product(athena, { status: 'active', limit: 100 });
 
@@ -79,6 +76,8 @@ result.rows[0].event_name  // string
 result.rows[0].price       // string (decimal - precision safe)
 result.rows[0].created_at  // Date
 ```
+
+You can also pass config explicitly: `createClient({ database: 'mydb', outputLocation: 's3://...' })`.
 
 ## Directory Structure
 

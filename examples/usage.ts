@@ -13,10 +13,8 @@ import { createClient, QueryTimeoutError, QueryFailedError } from 'aathena';
 // Import generated query functions (created by `npx aathena generate`)
 import { byStatus, byDateRange, totalRevenue } from './generated';
 
-const athena = createClient({
-  database: 'sampledb',
-  outputLocation: 's3://my-athena-results/output/',
-});
+// No config needed - reads from aathena.config.json automatically
+const athena = createClient();
 
 // --- Basic query with inferred types ---
 

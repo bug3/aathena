@@ -1,6 +1,7 @@
 import { AthenaClient as AwsAthenaClient } from '@aws-sdk/client-athena';
 import { executeQuery } from './lifecycle';
 import { parseRow } from './parser';
+import { loadConfig } from './config';
 import type { AathenaConfig, QueryResult } from './types';
 
 export class AathenaClient {
@@ -39,6 +40,12 @@ export class AathenaClient {
   }
 }
 
-export function createClient(config: AathenaConfig): AathenaClient {
-  return new AathenaClient(config);
+/**
+ * Create an Athena client.
+ *
+ * - `createClient()` — reads from aathena.config.json automatically
+ * - `createClient(config)` — uses the provided config
+ */
+export function createClient(config?: AathenaConfig): AathenaClient {
+  return new AathenaClient(config ?? loadConfig());
 }
