@@ -122,7 +122,7 @@ function inferTypeFromContext(sql: string, paramName: string): ParsedParam {
     `(?:>=|<=|<>|!=|>|<|=)\\s*'\\{\\{${paramName}\\}\\}'`,
   );
   if (numericCompare.test(sql) && !quotedCompare.test(sql)) {
-    return { name: paramName, type: 'number', inferred: true };
+    return { name: paramName, type: 'number', schemaType: 'number', inferred: true };
   }
 
   // Default: string
