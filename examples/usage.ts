@@ -34,8 +34,8 @@ for (const row of events.rows) {
 
 const filtered = await byDateRange(athena, {
   status: 'active',             // only 'active' | 'pending' | 'done'
-  startDate: '2025-01-01',     // validated as YYYY-MM-DD at runtime
-  endDate: '2025-12-31',       // validated as YYYY-MM-DD at runtime
+  startDate: '2022-02-22',     // validated as YYYY-MM-DD at runtime
+  endDate: '2022-12-22',       // validated as YYYY-MM-DD at runtime
   limit: 99,                  // validated as positive integer at runtime
 });
 
