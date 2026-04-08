@@ -4,8 +4,8 @@
 
 export interface Events {
   event_id: number;
-  event_name: string;
-  status: string;
-  price: string; // decimal → string (precision safe)
-  created_at: Date;
+  event_name: string | null;
+  status: string | null;
+  price: string | null; // decimal → string (precision safe)
+  created_at: Date | null;
 }

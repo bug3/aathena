@@ -27,9 +27,9 @@ const events = await byStatus(athena, {
 
 for (const row of events.rows) {
   console.log(row.event_id);    // number
-  console.log(row.event_name);  // string
-  console.log(row.price);       // string (decimal → precision safe)
-  console.log(row.created_at);  // Date
+  console.log(row.event_name);  // string | null
+  console.log(row.price);       // string | null (decimal → precision safe)
+  console.log(row.created_at);  // Date | null
 }
 
 // --- Query with @param validation ---

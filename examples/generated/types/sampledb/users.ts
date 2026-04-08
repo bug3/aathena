@@ -4,8 +4,8 @@
 
 export interface Users {
   user_id: number;
-  username: string;
-  email: string;
-  age: number;
-  is_active: boolean;
+  username: string | null;
+  email: string | null;
+  age: number | null;
+  is_active: boolean | null;
 }
