@@ -165,6 +165,7 @@ Table types are generated from the AWS Glue Data Catalog:
 | `date` | `string` | `YYYY-MM-DD` |
 | `timestamp` | `Date` | |
 | `json` | `unknown` | |
+| `binary`, `varbinary` | `string` | Base64 encoded |
 | `array<T>` | `T[]` | Recursive |
 | `map<K, V>` | `Record<K, V>` | Recursive |
 | `struct<a:T, b:U>` | `{ a: T; b: U }` | Recursive |

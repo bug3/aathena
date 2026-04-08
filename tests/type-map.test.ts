@@ -51,8 +51,17 @@ describe('athenaTypeToTS', () => {
     expect(athenaTypeToTS('map<string, map<string, integer>>')).toBe('Record<string, Record<string, number>>');
   });
 
+  it('maps binary types to string', () => {
+    expect(athenaTypeToTS('binary')).toBe('string');
+    expect(athenaTypeToTS('varbinary')).toBe('string');
+  });
+
   it('maps struct types', () => {
     expect(athenaTypeToTS('struct<name:string, age:integer>')).toBe('{ name: string; age: number }');
+  });
+
+  it('handles malformed struct fields gracefully', () => {
+    expect(athenaTypeToTS('struct<badfield>')).toBe('{ badfield: string }');
   });
 
   it('maps nested complex types', () => {

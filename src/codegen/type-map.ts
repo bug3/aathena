@@ -13,7 +13,7 @@ export function athenaTypeToTS(athenaType: string): string {
   if (t === 'date') return 'string';
   if (t === 'timestamp') return 'Date';
   if (t === 'json') return 'unknown';
-  if (t === 'binary' || t === 'varbinary') return 'Buffer';
+  if (t === 'binary' || t === 'varbinary') return 'string';
 
   // decimal(p,s) → string for precision safety
   if (t === 'decimal' || t.startsWith('decimal(')) return 'string';
@@ -76,6 +76,9 @@ function parseStructType(fields: string): string {
 
   const props = result.map((field) => {
     const colonIdx = field.indexOf(':');
+    if (colonIdx === -1) {
+      return `${field.trim()}: string`;
+    }
     const name = field.slice(0, colonIdx).trim();
     const type = field.slice(colonIdx + 1).trim();
     return `${name}: ${athenaTypeToTS(type)}`;
