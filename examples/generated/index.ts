@@ -3,9 +3,11 @@
 // Types
 export type { Events } from './types/sampledb/events';
 export type { Users } from './types/sampledb/users';
+export type { Products } from './types/sampledb/products';
 
 // Queries
 export { byStatus } from './queries/sampledb/events/by-status';
 export { byDateRange } from './queries/sampledb/events/by-date-range';
 export { totalRevenue } from './queries/sampledb/events/total-revenue';
 export { active } from './queries/sampledb/users/active';
+export { byCategory } from './queries/sampledb/products/by-category';
