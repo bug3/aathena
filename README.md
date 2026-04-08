@@ -69,7 +69,7 @@ import { product } from './generated';
 
 const athena = createClient(); // reads from aathena.config.json
 
-const result = await product(athena, { status: 'active', limit: 100 });
+const result = await product(athena, { status: 'active', limit: 99 });
 
 result.rows[0].event_id    // number
 result.rows[0].event_name  // string
@@ -225,7 +225,7 @@ import {
 } from 'aathena';
 
 try {
-  const result = await product(athena, { status: 'active', limit: 100 });
+  const result = await product(athena, { status: 'active', limit: 99 });
 } catch (err) {
   if (err instanceof QueryTimeoutError) {
     console.log(`Timed out after ${err.timeoutMs}ms: ${err.queryExecutionId}`);
