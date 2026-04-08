@@ -16,7 +16,7 @@ export function generateTypeFile(schema: TableSchema): string {
   for (const col of schema.columns) {
     const tsType = athenaTypeToTS(col.type);
     const fullType = col.nullable ? `${tsType} | null` : tsType;
-    const comment = col.comment ? ` // ${col.comment}` : typeComment(col.type, tsType);
+    const comment = col.comment ? ` // ${col.comment}` : typeComment(col.type);
     lines.push(`  ${col.name}: ${fullType};${comment}`);
   }
 
@@ -25,7 +25,7 @@ export function generateTypeFile(schema: TableSchema): string {
   return lines.join('\n');
 }
 
-function typeComment(athenaType: string, _tsType: string): string {
+function typeComment(athenaType: string): string {
   const t = athenaType.toLowerCase();
   // Add comments for non-obvious mappings
   if (t.startsWith('decimal')) return ' // decimal → string (precision safe)';
