@@ -192,7 +192,7 @@ Table types are generated from the AWS Glue Data Catalog:
 |---|---|---|
 | `region` | AWS default | AWS region |
 | `database` | *required* | Default Athena database |
-| `workgroup` | — | Athena workgroup |
+| `workgroup` | - | Athena workgroup |
 | `outputLocation` | *required* | S3 path for query results |
 | `tablesDir` | `./tables` | SQL files directory |
 | `outDir` | `./generated` | Codegen output directory |
@@ -224,7 +224,7 @@ try {
 
 ## Related
 
-- [sql-render](https://github.com/bug3/sql-render) — Type-safe SQL templating with injection protection (used internally)
+- [sql-render](https://github.com/bug3/sql-render) - Type-safe SQL templating with injection protection (used internally)
 
 ## License
 
