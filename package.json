@@ -1,7 +1,7 @@
 {
   "name": "aathena",
   "version": "0.1.0",
-  "description": "Type-safe AWS Athena client with codegen",
+  "description": "Type-safe AWS Athena client for TypeScript",
   "author": "bug3",
   "license": "MIT",
   "repository": {
