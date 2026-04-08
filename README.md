@@ -11,7 +11,7 @@ Type-safe AWS Athena client for TypeScript. Write SQL, run codegen, get fully ty
 - Run `npx aathena generate` to create types and query functions from AWS Glue schemas
 - Import and call with full type safety on both parameters and results
 
-Built on [@aws-sdk/client-athena](https://www.npmjs.com/package/@aws-sdk/client-athena) and [sql-render](https://github.com/bug3/sql-render).
+Built on [@aws-sdk/client-athena](https://www.npmjs.com/package/@aws-sdk/client-athena) and [sql-render](https://github.com/bug3/sql-render). See the [`examples/`](examples/) directory for a working project structure.
 
 ## Installation
 
