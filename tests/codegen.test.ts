@@ -46,7 +46,7 @@ describe('generateQueryFile', () => {
       typesImportPath: '../../types/sampledb/events',
     });
 
-    expect(output).toContain("import { createQuery } from 'aathena/runtime'");
+    expect(output).toContain("from 'aathena/runtime'");
     expect(output).toContain("import type { Events } from '../../types/sampledb/events'");
     expect(output).toContain('export interface ProductParams {');
     expect(output).toContain('status: string;');

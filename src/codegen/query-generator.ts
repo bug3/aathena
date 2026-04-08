@@ -20,11 +20,14 @@ export function generateQueryFile(input: QueryGenInput): string {
   const queryFnName = camelCase(fileNameWithoutExt(input.sqlRelativePath));
   const params = input.parsed.params;
 
+  const hasSchema = params.length > 0 && params.some((p) => p.schemaType);
+  const runtimeImports = hasSchema ? 'createQuery, schema' : 'createQuery';
+
   const lines: string[] = [
     HEADER,
     `// Source: ${input.sqlRelativePath}`,
     '',
-    `import { createQuery } from 'aathena/runtime';`,
+    `import { ${runtimeImports} } from 'aathena/runtime';`,
     `import type { ${interfaceName} } from '${input.typesImportPath}';`,
   ];
 
@@ -40,10 +43,7 @@ export function generateQueryFile(input: QueryGenInput): string {
     lines.push('');
 
     // Generate schema definition if any params have schema types
-    const hasSchema = params.some((p) => p.schemaType);
     if (hasSchema) {
-      lines.push(`import { schema } from 'aathena/runtime';`);
-      lines.push('');
       lines.push(`const schemaDef = {`);
       for (const p of params) {
         lines.push(`  ${p.name}: ${schemaExpression(p)},`);
