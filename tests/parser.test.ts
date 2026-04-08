@@ -12,8 +12,8 @@ describe('parseRow', () => {
 
   it('parses integer to number', () => {
     const columns: ColumnMeta[] = [{ name: 'id', type: 'integer', nullable: false }];
-    const row = parseRow<{ id: number }>(columns, ['42']);
-    expect(row.id).toBe(42);
+    const row = parseRow<{ id: number }>(columns, ['33']);
+    expect(row.id).toBe(33);
   });
 
   it('parses bigint to BigInt', () => {
