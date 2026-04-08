@@ -14,7 +14,7 @@ Configuration:
   Create aathena.config.json in your project root:
 
   {
-    "database": "mydb",
+    "database": "sampledb",
     "workgroup": "primary",
     "outputLocation": "s3://my-bucket/athena-results/",
     "tablesDir": "./tables",
