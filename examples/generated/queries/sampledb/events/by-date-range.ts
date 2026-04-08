@@ -2,7 +2,7 @@
 
 // Source: tables/sampledb/events/by-date-range.sql
 
-import { createQuery } from 'aathena/runtime';
+import { createQuery, schema } from 'aathena/runtime';
 import type { Events } from '../../../types/sampledb/events';
 
 export interface ByDateRangeParams {
@@ -11,8 +11,6 @@ export interface ByDateRangeParams {
   endDate: string;
   limit: number;
 }
-
-import { schema } from 'aathena/runtime';
 
 const schemaDef = {
   status: schema.enum('active', 'pending', 'done'),

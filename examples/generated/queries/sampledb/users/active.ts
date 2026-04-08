@@ -2,15 +2,13 @@
 
 // Source: tables/sampledb/users/active.sql
 
-import { createQuery } from 'aathena/runtime';
+import { createQuery, schema } from 'aathena/runtime';
 import type { Users } from '../../../types/sampledb/users';
 
 export interface ActiveParams {
   minAge: number;
   limit: number;
 }
-
-import { schema } from 'aathena/runtime';
 
 const schemaDef = {
   minAge: schema.positiveInt,
