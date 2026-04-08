@@ -1,6 +1,4 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import type { AathenaConfig, QueryResult } from './types';
+import type { QueryResult } from './types';
 import { AathenaClient } from './client';
 
 // sql-render is used internally for template rendering

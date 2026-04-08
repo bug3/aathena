@@ -56,7 +56,10 @@ export async function executeQuery(
     }),
   );
 
-  const queryExecutionId = startResult.QueryExecutionId!;
+  const queryExecutionId = startResult.QueryExecutionId;
+  if (!queryExecutionId) {
+    throw new Error('Athena did not return a QueryExecutionId');
+  }
 
   // Poll until complete
   const deadline = Date.now() + timeout;

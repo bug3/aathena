@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'n
 import { resolve, relative, dirname, join, basename, extname } from 'node:path';
 import type { AathenaConfig } from '../runtime/types';
 import { parseSQL } from './sql-parser';
-import { fetchTableSchema, fetchAllTables, type TableSchema } from './glue-fetcher';
+import { fetchTableSchema, type TableSchema } from './glue-fetcher';
 import { generateTypeFile } from './type-generator';
 import { generateQueryFile } from './query-generator';
 

@@ -99,8 +99,6 @@ function schemaToTsType(schemaType: string): string {
  * - default           → string
  */
 function inferTypeFromContext(sql: string, paramName: string): ParsedParam {
-  const placeholder = `{{${paramName}}}`;
-
   // Check if in quoted context: '{{var}}'
   const quotedPattern = new RegExp(`'\\{\\{${paramName}\\}\\}'`);
   if (quotedPattern.test(sql)) {
@@ -147,8 +145,9 @@ export function parseSQL(sql: string): ParsedSQL {
     seen.add(name);
 
     // Annotation takes priority over inference
-    if (annotations.has(name)) {
-      params.push(annotations.get(name)!);
+    const annotation = annotations.get(name);
+    if (annotation) {
+      params.push(annotation);
     } else {
       params.push(inferTypeFromContext(sql, name));
     }
