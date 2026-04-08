@@ -45,7 +45,6 @@ export async function fetchTableSchema(
   };
 }
 
-
 function mapColumn(col: Column, nullable: boolean): GlueColumn {
   return {
     name: col.Name ?? '',
