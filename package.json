@@ -4,6 +4,14 @@
   "description": "Type-safe AWS Athena client with codegen",
   "author": "bug3",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bug3/aathena.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bug3/aathena/issues"
+  },
+  "homepage": "https://github.com/bug3/aathena#readme",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -28,7 +36,8 @@
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src/ tests/"
+    "lint": "eslint src/ tests/",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "athena",
