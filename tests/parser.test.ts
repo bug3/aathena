@@ -102,9 +102,37 @@ describe('parseRow', () => {
     expect(row.matrix).toEqual([[1, 2], [3, 4]]);
   });
 
-  it('throws ColumnParseError for invalid complex type', () => {
-    const columns: ColumnMeta[] = [{ name: 'tags', type: 'array<varchar>', nullable: false }];
-    expect(() => parseRow(columns, ['{invalid json'])).toThrow(ColumnParseError);
+  it('parses Athena struct format (key=value)', () => {
+    const columns: ColumnMeta[] = [{ name: 'browser', type: 'struct<name:string,platform:string>', nullable: false }];
+    const row = parseRow<{ browser: { name: string; platform: string } }>(columns, ['{name=Chrome, platform=mobile}']);
+    expect(row.browser).toEqual({ name: 'Chrome', platform: 'mobile' });
+  });
+
+  it('parses Athena nested struct format', () => {
+    const columns: ColumnMeta[] = [{ name: 'data', type: 'struct<count:int,info:struct<city:string,zip:int>>', nullable: false }];
+    const row = parseRow<{ data: { count: number; info: { city: string; zip: number } } }>(
+      columns,
+      ['{count=5, info={city=NYC, zip=10001}}'],
+    );
+    expect(row.data).toEqual({ count: 5, info: { city: 'NYC', zip: 10001 } });
+  });
+
+  it('parses Athena struct with null values', () => {
+    const columns: ColumnMeta[] = [{ name: 'data', type: 'struct<a:string,b:int>', nullable: false }];
+    const row = parseRow<{ data: { a: string | null; b: number | null } }>(columns, ['{a=hello, b=null}']);
+    expect(row.data).toEqual({ a: 'hello', b: null });
+  });
+
+  it('parses Athena struct with array field', () => {
+    const columns: ColumnMeta[] = [{ name: 'data', type: 'struct<tags:array<string>,ok:boolean>', nullable: false }];
+    const row = parseRow<{ data: { tags: string[]; ok: boolean } }>(columns, ['{tags=[a, b, c], ok=true}']);
+    expect(row.data).toEqual({ tags: ['a', 'b', 'c'], ok: true });
+  });
+
+  it('parses Athena array of structs', () => {
+    const columns: ColumnMeta[] = [{ name: 'items', type: 'array<struct<id:int,name:string>>', nullable: false }];
+    const row = parseRow<{ items: { id: number; name: string }[] }>(columns, ['[{id=1, name=foo}, {id=2, name=bar}]']);
+    expect(row.items).toEqual([{ id: 1, name: 'foo' }, { id: 2, name: 'bar' }]);
   });
 
   it('throws ColumnParseError for invalid integer', () => {
