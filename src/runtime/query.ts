@@ -9,7 +9,7 @@ type QueryFn<TResult, TParams> = (
   params: TParams,
 ) => Promise<QueryResult<TResult>>;
 
-export function createQuery<TResult, TParams extends Record<string, unknown>>(
+export function createQuery<TResult, TParams = Record<string, never>>(
   sqlPath: string,
   schemaDef?: Record<string, { validate(val: unknown): boolean }>,
 ): QueryFn<TResult, TParams> {
