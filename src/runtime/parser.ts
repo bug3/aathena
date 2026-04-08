@@ -182,7 +182,7 @@ function getParser(athenaType: string): Parser {
   if (t === 'date') return identity; // YYYY-MM-DD string
   if (t === 'timestamp') return parseTimestamp;
   if (t === 'json') return parseJson;
-  if (t.startsWith('array') || t.startsWith('map') || t.startsWith('struct')) return parseComplexType;
+  if (t === 'row' || t.startsWith('array') || t.startsWith('map') || t.startsWith('struct')) return parseComplexType;
 
   // varchar, string, char, binary, unknown → string
   return identity;
