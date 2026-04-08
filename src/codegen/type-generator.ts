@@ -33,7 +33,7 @@ function typeComment(athenaType: string, _tsType: string): string {
   if (t.startsWith('array')) return ` // ${athenaType}`;
   if (t.startsWith('map')) return ` // ${athenaType}`;
   if (t.startsWith('struct')) return ` // ${athenaType}`;
-  if (t === 'bigint') return ' // bigint → number';
+  if (t === 'bigint') return ' // JS BigInt';
   return '';
 }
 

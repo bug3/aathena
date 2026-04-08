@@ -6,6 +6,7 @@ import {
   type ResultSet,
 } from '@aws-sdk/client-athena';
 import {
+  AathenaError,
   QueryTimeoutError,
   QueryFailedError,
   QueryCancelledError,
@@ -58,7 +59,7 @@ export async function executeQuery(
 
   const queryExecutionId = startResult.QueryExecutionId;
   if (!queryExecutionId) {
-    throw new Error('Athena did not return a QueryExecutionId');
+    throw new AathenaError('Athena did not return a QueryExecutionId');
   }
 
   // Poll until complete
