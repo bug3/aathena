@@ -116,14 +116,14 @@ function inferTypeFromContext(sql: string, paramName: string): ParsedParam {
     return { name: paramName, type: 'number', schemaType: 'positiveInt', inferred: true };
   }
 
-  // Check numeric comparison: >= {{var}}, <= {{var}}, > {{var}}, < {{var}}
+  // Check numeric comparison: >= {{var}}, <= {{var}}, > {{var}}, < {{var}}, != {{var}}, = {{var}}
   const numericCompare = new RegExp(
-    `[><=!]+\\s*\\{\\{${paramName}\\}\\}`,
+    `(?:>=|<=|<>|!=|>|<|=)\\s*\\{\\{${paramName}\\}\\}`,
   );
-  const notQuotedCompare = new RegExp(
-    `[><=!]+\\s*'\\{\\{${paramName}\\}\\}'`,
+  const quotedCompare = new RegExp(
+    `(?:>=|<=|<>|!=|>|<|=)\\s*'\\{\\{${paramName}\\}\\}'`,
   );
-  if (numericCompare.test(sql) && !notQuotedCompare.test(sql)) {
+  if (numericCompare.test(sql) && !quotedCompare.test(sql)) {
     return { name: paramName, type: 'number', inferred: true };
   }
 

@@ -8,7 +8,7 @@ export function athenaTypeToTS(athenaType: string): string {
   // Primitive types
   if (t === 'boolean') return 'boolean';
   if (t === 'tinyint' || t === 'smallint' || t === 'integer' || t === 'int') return 'number';
-  if (t === 'bigint') return 'number';
+  if (t === 'bigint') return 'bigint';
   if (t === 'double' || t === 'float' || t === 'real') return 'number';
   if (t === 'date') return 'string';
   if (t === 'timestamp') return 'Date';
