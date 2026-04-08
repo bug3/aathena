@@ -8,7 +8,7 @@ describe('athenaTypeToTS', () => {
     expect(athenaTypeToTS('smallint')).toBe('number');
     expect(athenaTypeToTS('integer')).toBe('number');
     expect(athenaTypeToTS('int')).toBe('number');
-    expect(athenaTypeToTS('bigint')).toBe('number');
+    expect(athenaTypeToTS('bigint')).toBe('bigint');
     expect(athenaTypeToTS('double')).toBe('number');
     expect(athenaTypeToTS('float')).toBe('number');
     expect(athenaTypeToTS('real')).toBe('number');

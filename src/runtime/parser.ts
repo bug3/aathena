@@ -24,7 +24,10 @@ const parseBoolean: Parser = (v, col) => {
 };
 
 const parseTimestamp: Parser = (v, col) => {
-  const d = new Date(v.includes('T') ? v : v.replace(' ', 'T') + 'Z');
+  // Athena returns timestamps as 'YYYY-MM-DD HH:MM:SS.sss' (timezone-naive).
+  // Replace space with 'T' for ISO 8601 parsing without appending 'Z',
+  // so the timestamp is interpreted in the local timezone (matching Athena's behavior).
+  const d = new Date(v.includes('T') ? v : v.replace(' ', 'T'));
   if (isNaN(d.getTime())) throw new ColumnParseError(col, v, 'timestamp');
   return d;
 };
@@ -72,7 +75,7 @@ export function parseRow<T>(
     const col = columns[i];
     const raw = rowData[i];
 
-    if (raw === undefined || raw === null || raw === '') {
+    if (raw === undefined || raw === null) {
       obj[col.name] = null;
       continue;
     }

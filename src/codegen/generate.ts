@@ -40,18 +40,35 @@ export async function generate(config: AathenaConfig, cwd: string): Promise<Gene
     }
   }
 
-  // 3. Fetch table schemas from Glue
+  // 3. Fetch table schemas from Glue (parallel)
   console.log(`Fetching schemas for ${tableSet.size} table(s)...`);
   const schemas = new Map<string, TableSchema>();
+  const failedTables: string[] = [];
 
-  for (const [key, { database, tableName }] of tableSet) {
-    try {
-      const schema = await fetchTableSchema(config.region, database, tableName);
-      schemas.set(key, schema);
-      console.log(`  ✓ ${key} (${schema.columns.length} columns)`);
-    } catch (err) {
-      console.error(`  ✗ ${key}: ${(err as Error).message}`);
+  const entries = [...tableSet.entries()];
+  const results = await Promise.allSettled(
+    entries.map(([, { database, tableName }]) =>
+      fetchTableSchema(config.region, database, tableName),
+    ),
+  );
+
+  for (let i = 0; i < results.length; i++) {
+    const key = entries[i][0];
+    const result = results[i];
+    if (result.status === 'fulfilled') {
+      schemas.set(key, result.value);
+      console.log(`  ✓ ${key} (${result.value.columns.length} columns)`);
+    } else {
+      failedTables.push(key);
+      console.error(`  ✗ ${key}: ${result.reason?.message ?? result.reason}`);
     }
+  }
+
+  if (failedTables.length > 0) {
+    throw new Error(
+      `Failed to fetch schemas for: ${failedTables.join(', ')}. ` +
+      `Fix the errors above or remove the corresponding SQL files.`,
+    );
   }
 
   // 4. Generate type files

@@ -1,15 +1,15 @@
-import { AthenaClient } from '@aws-sdk/client-athena';
+import { AthenaClient as AwsAthenaClient } from '@aws-sdk/client-athena';
 import { executeQuery } from './lifecycle';
 import { parseRow } from './parser';
 import type { AathenaConfig, QueryResult } from './types';
 
 export class AathenaClient {
-  private readonly athena: AthenaClient;
+  private readonly athena: AwsAthenaClient;
   private readonly config: AathenaConfig;
 
   constructor(config: AathenaConfig) {
     this.config = config;
-    this.athena = new AthenaClient({
+    this.athena = new AwsAthenaClient({
       region: config.region,
     });
   }
