@@ -20,7 +20,7 @@ const athena = createClient();
 
 const events = await byStatus(athena, {
   status: 'active',  // string (inferred from quoted context)
-  limit: 50,         // number (inferred from LIMIT)
+  limit: 99,         // number (inferred from LIMIT)
 });
 
 for (const row of events.rows) {
@@ -36,7 +36,7 @@ const filtered = await byDateRange(athena, {
   status: 'active',             // only 'active' | 'pending' | 'done'
   startDate: '2025-01-01',     // validated as YYYY-MM-DD at runtime
   endDate: '2025-12-31',       // validated as YYYY-MM-DD at runtime
-  limit: 100,                  // validated as positive integer at runtime
+  limit: 99,                  // validated as positive integer at runtime
 });
 
 console.log(`Found ${filtered.rows.length} events`);
