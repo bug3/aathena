@@ -173,7 +173,7 @@ Table types are generated from the AWS Glue Data Catalog:
 
 Athena's complex types (`array`, `map`, `struct`) are fully supported - both in generated TypeScript types and at runtime parsing. Nested combinations like `array<map<string, struct<...>>>` work recursively.
 
-This is a common pain point with Athena: the AWS SDK returns every value as a flat string, leaving you to manually parse complex types from JSON. aathena handles this automatically - your code receives properly typed arrays, records and objects.
+This is a common pain point with Athena: the AWS SDK returns every value as a flat string, leaving you to manually parse complex types. Without aathena, you're stuck with workarounds — writing `CAST()` expressions in SQL, creating extra views, or manually calling `JSON.parse()` and hoping the shape is right. aathena handles this automatically: your Parquet/ORC native types map 1:1 to TypeScript, no conversion needed.
 
 ```typescript
 // Glue schema: tags array<varchar>, metadata map<string,integer>, address struct<city:string,zip:integer>
@@ -181,6 +181,7 @@ This is a common pain point with Athena: the AWS SDK returns every value as a fl
 result.rows[0].tags      // string[]
 result.rows[0].metadata  // Record<string, number>
 result.rows[0].address   // { city: string; zip: number }
+result.rows[0].address.city  // string — direct access, just like the source data
 ```
 
 ## Config
