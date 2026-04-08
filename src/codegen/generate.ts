@@ -1,0 +1,199 @@
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { resolve, relative, dirname, join, basename, extname } from 'node:path';
+import type { AathenaConfig } from '../runtime/types';
+import { parseSQL } from './sql-parser';
+import { fetchTableSchema, fetchAllTables, type TableSchema } from './glue-fetcher';
+import { generateTypeFile } from './type-generator';
+import { generateQueryFile } from './query-generator';
+
+interface GenerateResult {
+  typesGenerated: number;
+  queriesGenerated: number;
+}
+
+/**
+ * Main codegen orchestrator.
+ *
+ * 1. Scans tables/ for SQL files → extracts database/table structure
+ * 2. Fetches table schemas from Glue
+ * 3. Generates types/ from Glue metadata
+ * 4. Generates queries/ from SQL files + inferred param types
+ */
+export async function generate(config: AathenaConfig, cwd: string): Promise<GenerateResult> {
+  const tablesDir = resolve(cwd, config.tablesDir ?? 'tables');
+  const outDir = resolve(cwd, config.outDir ?? 'generated');
+
+  // 1. Discover SQL files and extract structure
+  const sqlFiles = discoverSQLFiles(tablesDir);
+
+  if (sqlFiles.length === 0) {
+    console.log('No SQL files found in', tablesDir);
+    return { typesGenerated: 0, queriesGenerated: 0 };
+  }
+
+  // 2. Identify unique database.table pairs
+  const tableSet = new Map<string, { database: string; tableName: string }>();
+  for (const file of sqlFiles) {
+    const key = `${file.database}.${file.tableName}`;
+    if (!tableSet.has(key)) {
+      tableSet.set(key, { database: file.database, tableName: file.tableName });
+    }
+  }
+
+  // 3. Fetch table schemas from Glue
+  console.log(`Fetching schemas for ${tableSet.size} table(s)...`);
+  const schemas = new Map<string, TableSchema>();
+
+  for (const [key, { database, tableName }] of tableSet) {
+    try {
+      const schema = await fetchTableSchema(config.region, database, tableName);
+      schemas.set(key, schema);
+      console.log(`  ✓ ${key} (${schema.columns.length} columns)`);
+    } catch (err) {
+      console.error(`  ✗ ${key}: ${(err as Error).message}`);
+    }
+  }
+
+  // 4. Generate type files
+  const typesDir = resolve(outDir, 'types');
+  let typesGenerated = 0;
+
+  for (const [, schema] of schemas) {
+    const typeDir = resolve(typesDir, schema.database);
+    mkdirSync(typeDir, { recursive: true });
+
+    const content = generateTypeFile(schema);
+    const filePath = resolve(typeDir, `${schema.tableName}.ts`);
+    writeFileSync(filePath, content, 'utf-8');
+    typesGenerated++;
+  }
+
+  // 5. Generate query files
+  const queriesDir = resolve(outDir, 'queries');
+  let queriesGenerated = 0;
+
+  for (const file of sqlFiles) {
+    const sql = readFileSync(file.absolutePath, 'utf-8');
+    const parsed = parseSQL(sql);
+
+    const queryFileDir = resolve(queriesDir, file.relativeDirFromTables);
+    mkdirSync(queryFileDir, { recursive: true });
+
+    const queryFilePath = resolve(queryFileDir, `${file.queryName}.ts`);
+    const typesImportPath = computeRelativeImport(
+      queryFilePath,
+      resolve(typesDir, file.database, `${file.tableName}.ts`),
+    );
+
+    const content = generateQueryFile({
+      sqlRelativePath: file.relativePathFromRoot,
+      tableName: file.tableName,
+      database: file.database,
+      parsed,
+      typesImportPath,
+    });
+
+    writeFileSync(queryFilePath, content, 'utf-8');
+    queriesGenerated++;
+  }
+
+  // 6. Generate barrel index
+  generateBarrelIndex(outDir, sqlFiles, schemas);
+
+  return { typesGenerated, queriesGenerated };
+}
+
+interface SQLFileInfo {
+  absolutePath: string;
+  relativePathFromRoot: string;   // e.g. "tables/mydb/events/product.sql"
+  relativeDirFromTables: string;  // e.g. "mydb/events"
+  database: string;               // e.g. "mydb"
+  tableName: string;              // e.g. "events"
+  queryName: string;              // e.g. "product"
+}
+
+function discoverSQLFiles(tablesDir: string): SQLFileInfo[] {
+  const files: SQLFileInfo[] = [];
+
+  function walk(dir: string, relPath: string) {
+    for (const entry of readdirSync(dir)) {
+      const fullPath = join(dir, entry);
+      const stat = statSync(fullPath);
+
+      if (stat.isDirectory()) {
+        walk(fullPath, relPath ? `${relPath}/${entry}` : entry);
+      } else if (extname(entry) === '.sql') {
+        const rel = relPath ? `${relPath}/${entry}` : entry;
+        const parts = rel.split('/');
+
+        // Structure: database/table/.../queryName.sql
+        // Minimum: database/table/query.sql (3 parts)
+        if (parts.length < 3) {
+          console.warn(`  Skipping ${rel}: expected tables/{database}/{table}/query.sql`);
+          continue;
+        }
+
+        const database = parts[0];
+        const tableName = parts[1];
+        const queryName = basename(entry, '.sql');
+
+        files.push({
+          absolutePath: fullPath,
+          relativePathFromRoot: `tables/${rel}`,
+          relativeDirFromTables: dirname(rel),
+          database,
+          tableName,
+          queryName,
+        });
+      }
+    }
+  }
+
+  walk(tablesDir, '');
+  return files;
+}
+
+function computeRelativeImport(from: string, to: string): string {
+  let rel = relative(dirname(from), to).replace(/\.ts$/, '');
+  if (!rel.startsWith('.')) rel = './' + rel;
+  return rel;
+}
+
+function generateBarrelIndex(
+  outDir: string,
+  sqlFiles: SQLFileInfo[],
+  schemas: Map<string, TableSchema>,
+): void {
+  const lines: string[] = [
+    '// Auto-generated by aathena — do not edit\n',
+    '// Types',
+  ];
+
+  for (const [, schema] of schemas) {
+    lines.push(
+      `export type { ${pascalCase(schema.tableName)} } from './types/${schema.database}/${schema.tableName}';`,
+    );
+  }
+
+  lines.push('', '// Queries');
+
+  for (const file of sqlFiles) {
+    const queryFnName = camelCase(file.queryName);
+    const importPath = `./queries/${file.relativeDirFromTables}/${file.queryName}`;
+    lines.push(
+      `export { ${queryFnName} } from '${importPath}';`,
+    );
+  }
+
+  lines.push('');
+  writeFileSync(resolve(outDir, 'index.ts'), lines.join('\n'), 'utf-8');
+}
+
+function pascalCase(str: string): string {
+  return str.split(/[_\-\s]+/).map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join('');
+}
+
+function camelCase(str: string): string {
+  const p = pascalCase(str);
+  return p.charAt(0).toLowerCase() + p.slice(1);
+}
