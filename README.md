@@ -169,6 +169,20 @@ Table types are generated from the AWS Glue Data Catalog:
 | `map<K, V>` | `Record<K, V>` | Recursive |
 | `struct<a:T, b:U>` | `{ a: T; b: U }` | Recursive |
 
+### Complex Types
+
+Athena's complex types (`array`, `map`, `struct`) are fully supported - both in generated TypeScript types and at runtime parsing. Nested combinations like `array<map<string, struct<...>>>` work recursively.
+
+This is a common pain point with Athena: the AWS SDK returns every value as a flat string, leaving you to manually parse complex types from JSON. aathena handles this automatically - your code receives properly typed arrays, records and objects.
+
+```typescript
+// Glue schema: tags array<varchar>, metadata map<string,integer>, address struct<city:string,zip:integer>
+
+result.rows[0].tags      // string[]
+result.rows[0].metadata  // Record<string, number>
+result.rows[0].address   // { city: string; zip: number }
+```
+
 ## Config
 
 ```json
