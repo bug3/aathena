@@ -1,10 +1,15 @@
 # aathena
 
+[![CI](https://github.com/bug3/aathena/actions/workflows/ci.yml/badge.svg)](https://github.com/bug3/aathena/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/aathena)](https://www.npmjs.com/package/aathena)
+[![license](https://img.shields.io/npm/l/aathena)](LICENSE)
+[![node](https://img.shields.io/node/v/aathena)](package.json)
+
 Type-safe AWS Athena client for TypeScript. Write SQL, run codegen, get fully typed query functions.
 
-- Write SQL files with `{{variable}}` placeholders - same syntax you'd use in the Athena console
-- Run `npx aathena generate` - types and query functions are created automatically
-- Import and call - input parameters and query results are fully typed
+- Write SQL files with `{{variable}}` placeholders
+- Run `npx aathena generate` to create types and query functions from AWS Glue schemas
+- Import and call with full type safety on both parameters and results
 
 Built on [@aws-sdk/client-athena](https://www.npmjs.com/package/@aws-sdk/client-athena) and [sql-render](https://github.com/bug3/sql-render).
 
@@ -12,19 +17,6 @@ Built on [@aws-sdk/client-athena](https://www.npmjs.com/package/@aws-sdk/client-
 
 ```bash
 npm install aathena
-```
-
-## How It Works
-
-```
- You write SQL          Codegen generates          You use in code
-┌──────────────┐      ┌─────────────────────┐      ┌──────────────────┐
-│ tables/       │      │ generated/           │      │ src/             │
-│  sampledb/        │ ───> │  types/events.ts     │ ───> │  import { product } │
-│   events/     │      │  queries/product.ts  │      │  from './generated' │
-│    product.sql│      │                     │      │                  │
-└──────────────┘      └─────────────────────┘      └──────────────────┘
-                  npx aathena generate
 ```
 
 ## Quick Start
@@ -40,9 +32,9 @@ npm install aathena
 }
 ```
 
-### 2. Write your SQL
+### 2. Write SQL
 
-Create a SQL file under `tables/{database}/{table}/{query}.sql`:
+Create a file under `tables/{database}/{table}/{query}.sql`:
 
 ```sql
 -- tables/sampledb/events/product.sql
@@ -52,37 +44,28 @@ WHERE status = '{{status}}'
 LIMIT {{limit}}
 ```
 
-That's it. Same SQL you'd write in the Athena console, with `{{variables}}` for dynamic values.
-
 ### 3. Generate
 
 ```bash
 npx aathena generate
 ```
 
-This does two things:
-
-1. Fetches your table schema from AWS Glue Data Catalog and generates TypeScript interfaces
-2. Scans your SQL files and generates typed query functions with parameter types inferred from context
-
-Output:
+Codegen fetches your table schema from AWS Glue and generates typed query functions:
 
 ```
 generated/
-├── types/
-│   └── sampledb/
-│       └── events.ts        # interface Events { event_id: number; ... }
-└── queries/
-    └── sampledb/
-        └── events/
-            └── product.ts   # export const product = createQuery<Events, ProductParams>(...)
+├── types/sampledb/
+│   └── events.ts          # interface Events { event_id: number; ... }
+├── queries/sampledb/events/
+│   └── product.ts         # export const product = createQuery<Events, ProductParams>(...)
+└── index.ts               # barrel exports
 ```
 
 ### 4. Use
 
 ```typescript
 import { createClient } from 'aathena';
-import { product } from './generated/queries/sampledb/events/product';
+import { product } from './generated';
 
 const athena = createClient({
   database: 'sampledb',
@@ -97,83 +80,62 @@ result.rows[0].price       // string (decimal - precision safe)
 result.rows[0].created_at  // Date
 ```
 
-No manual type definitions. No mapping. Just SQL in, typed results out.
-
 ## Directory Structure
 
 ```
 project/
-├── tables/                     # You write SQL here
-│   ├── sampledb/               # Database name
-│   │   ├── events/             # Table name
-│   │   │   ├── product.sql
-│   │   │   ├── category.sql
-│   │   │   └── cart/
-│   │   │       ├── add.sql     # Nested grouping is fine
-│   │   │       └── remove.sql
-│   │   └── users/
-│   │       └── active.sql
-│   └── analytics/              # Multiple databases supported
-│       └── sessions/
-│           └── recent.sql
-├── generated/                  # Codegen output (git-ignored)
-│   ├── types/
-│   ├── queries/
-│   └── index.ts
+├── tables/                     # SQL files go here
+│   └── sampledb/               # database name
+│       ├── events/             # table name
+│       │   ├── product.sql
+│       │   └── category.sql
+│       └── users/
+│           └── active.sql
+├── generated/                  # codegen output (gitignored)
 ├── aathena.config.json
-└── src/                        # Your application code
+└── src/
 ```
 
-The convention is simple: `tables/{database}/{table}/{query}.sql`. Codegen mirrors this structure in `generated/queries/`.
+Convention: `tables/{database}/{table}/{query}.sql`. Nested grouping (e.g. `events/cart/add.sql`) is supported.
 
 ## Parameter Type Inference
 
-aathena automatically infers parameter types from SQL context:
+Parameter types are inferred automatically from SQL context:
 
 ```sql
-WHERE status = '{{status}}'         -- quoted → string
-LIMIT {{limit}}                     -- LIMIT/OFFSET → number
-WHERE price >= {{minPrice}}         -- unquoted comparison → number
-```
-
-Generated params interface:
-
-```typescript
-export interface ProductParams {
-  status: string;
-  limit: number;
-  minPrice: number;
-}
+WHERE status = '{{status}}'      -- quoted       → string
+LIMIT {{limit}}                  -- LIMIT/OFFSET → number
+WHERE price >= {{minPrice}}      -- comparison   → number
 ```
 
 ### Explicit Types with `@param`
 
-For stricter types, add `@param` annotations as SQL comments:
+For stricter validation, add `@param` annotations:
 
 ```sql
 -- @param status enum('active','pending','done')
 -- @param limit positiveInt
 -- @param startDate isoDate
-SELECT event_id, event_name
+SELECT *
 FROM events
 WHERE status = '{{status}}'
   AND created_at >= '{{startDate}}'
 LIMIT {{limit}}
 ```
 
-This generates narrower TypeScript types **and** adds runtime validation:
+Generates narrower types with runtime validation:
 
 ```typescript
-export interface ProductParams {
+interface ProductParams {
   status: 'active' | 'pending' | 'done';  // union type
-  limit: number;                            // validated as positive integer
-  startDate: string;                        // validated as YYYY-MM-DD
+  limit: number;                           // validated > 0
+  startDate: string;                       // validated YYYY-MM-DD
 }
 ```
 
-Available `@param` types:
+### Available `@param` Types
 
-| Annotation | TypeScript Type | Validation |
+| Annotation | TypeScript | Validation |
 |---|---|---|
 | `string` | `string` | SQL injection check |
 | `number` | `number` | Finite number |
@@ -186,21 +148,21 @@ Available `@param` types:
 | `s3Path` | `string` | `s3://bucket/path` |
 | `enum('a','b','c')` | `'a' \| 'b' \| 'c'` | Whitelist |
 
-When no `@param` is provided, types are inferred from context automatically. Both approaches can be mixed in the same file.
+Inference and annotations can be mixed in the same file. Annotations take priority.
 
 ## Type Mapping
 
-Table types are generated from AWS Glue Data Catalog. Athena column types map to TypeScript as follows:
+Table types are generated from the AWS Glue Data Catalog:
 
 | Athena | TypeScript | Notes |
 |---|---|---|
 | `varchar`, `string`, `char` | `string` | |
 | `integer`, `int`, `smallint`, `tinyint` | `number` | |
-| `bigint` | `number` | |
+| `bigint` | `bigint` | |
 | `double`, `float`, `real` | `number` | |
-| `decimal` | `string` | String to preserve precision |
+| `decimal` | `string` | Preserves precision |
 | `boolean` | `boolean` | |
-| `date` | `string` | `YYYY-MM-DD` format |
+| `date` | `string` | `YYYY-MM-DD` |
 | `timestamp` | `Date` | |
 | `json` | `unknown` | |
 | `array<T>` | `T[]` | Recursive |
@@ -229,31 +191,13 @@ Table types are generated from AWS Glue Data Catalog. Athena column types map to
 |---|---|---|
 | `region` | AWS default | AWS region |
 | `database` | *required* | Default Athena database |
-| `workgroup` | `undefined` | Athena workgroup |
+| `workgroup` | — | Athena workgroup |
 | `outputLocation` | *required* | S3 path for query results |
-| `tablesDir` | `./tables` | Directory containing SQL files |
+| `tablesDir` | `./tables` | SQL files directory |
 | `outDir` | `./generated` | Codegen output directory |
 | `query.timeout` | `300000` | Query timeout in ms (5 min) |
-| `query.pollingInterval` | `500` | Initial polling interval in ms |
-| `query.maxPollingInterval` | `5000` | Max polling interval in ms |
-
-## Query Execution
-
-Under the hood, each generated query function handles the full Athena lifecycle:
-
-1. Renders the SQL template with your parameters (using [sql-render](https://github.com/bug3/sql-render) for injection protection)
-2. Calls `StartQueryExecution`
-3. Polls `GetQueryExecution` with exponential backoff until complete
-4. Fetches results via `GetQueryResults` with automatic pagination
-5. Parses every `VarCharValue` string into the correct TypeScript type using column metadata
-
-```typescript
-const result = await product(athena, { status: 'active', limit: 100 });
-
-result.rows              // Events[] - typed rows
-result.queryExecutionId  // string - for debugging
-result.statistics        // { dataScannedInBytes, engineExecutionTimeInMillis }
-```
+| `query.pollingInterval` | `500` | Initial poll interval in ms |
+| `query.maxPollingInterval` | `5000` | Max poll interval in ms |
 
 ## Error Handling
 
@@ -279,7 +223,7 @@ try {
 
 ## Related
 
-- [sql-render](https://github.com/bug3/sql-render) - Type-safe SQL templating with injection protection. Used internally by aathena for parameter rendering.
+- [sql-render](https://github.com/bug3/sql-render) — Type-safe SQL templating with injection protection (used internally)
 
 ## License
 
