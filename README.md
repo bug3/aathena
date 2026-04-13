@@ -83,6 +83,7 @@ You can also pass config explicitly: `createClient({ database: 'mydb', outputLoc
 
 ```
 project/
+├── aathena.config.json         # project root marker (required)
 ├── tables/                     # SQL files go here
 │   └── sampledb/               # database name
 │       ├── events/             # table name
@@ -91,9 +92,10 @@ project/
 │       └── users/
 │           └── active.sql
 ├── generated/                  # codegen output (gitignored)
-├── aathena.config.json
 └── src/
 ```
+
+`aathena.config.json` must be at the project root. Both the CLI and runtime use it to locate SQL files, so queries work regardless of the working directory.
 
 Convention: `tables/{database}/{table}/{query}.sql`. Nested grouping (e.g. `events/cart/add.sql`) is supported.
 
@@ -185,6 +187,8 @@ result.rows[0].address.city  // string, direct access just like the source data
 ```
 
 ## Config
+
+Place `aathena.config.json` at the root of your project. The CLI and runtime will walk up the directory tree to find it automatically.
 
 ```json
 {

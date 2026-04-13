@@ -1,5 +1,5 @@
 import { generate } from '../codegen/generate';
-import { loadConfig } from '../runtime/config';
+import { findProjectRoot, loadConfig } from '../runtime/config';
 
 const HELP = `
 aathena - Type-safe AWS Athena client with codegen
@@ -30,7 +30,7 @@ async function main() {
   }
 
   if (command === 'generate') {
-    const cwd = process.cwd();
+    const cwd = findProjectRoot();
     const config = loadConfig(cwd);
 
     console.log('aathena generate');
