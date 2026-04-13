@@ -24,7 +24,8 @@ export async function generate(config: AathenaConfig, cwd: string): Promise<Gene
   const outDir = resolve(cwd, config.outDir ?? 'generated');
 
   // 1. Discover SQL files and extract structure
-  const sqlFiles = discoverSQLFiles(tablesDir);
+  const tablesDirRel = config.tablesDir ?? 'tables';
+  const sqlFiles = discoverSQLFiles(tablesDir, tablesDirRel);
 
   if (sqlFiles.length === 0) {
     console.log('No SQL files found in', tablesDir);
@@ -129,8 +130,10 @@ interface SQLFileInfo {
   queryName: string;              // e.g. "product"
 }
 
-function discoverSQLFiles(tablesDir: string): SQLFileInfo[] {
+function discoverSQLFiles(tablesDir: string, tablesDirRel: string): SQLFileInfo[] {
   const files: SQLFileInfo[] = [];
+  // Normalize: strip leading ./ for clean path joining
+  const prefix = tablesDirRel.replace(/^\.\//, '');
 
   function walk(dir: string, relPath: string) {
     for (const entry of readdirSync(dir)) {
@@ -146,7 +149,7 @@ function discoverSQLFiles(tablesDir: string): SQLFileInfo[] {
         // Structure: database/table/.../queryName.sql
         // Minimum: database/table/query.sql (3 parts)
         if (parts.length < 3) {
-          console.warn(`  Skipping ${rel}: expected tables/{database}/{table}/query.sql`);
+          console.warn(`  Skipping ${rel}: expected {database}/{table}/query.sql`);
           continue;
         }
 
@@ -156,7 +159,7 @@ function discoverSQLFiles(tablesDir: string): SQLFileInfo[] {
 
         files.push({
           absolutePath: fullPath,
-          relativePathFromRoot: `tables/${rel}`,
+          relativePathFromRoot: `${prefix}/${rel}`,
           relativeDirFromTables: dirname(rel),
           database,
           tableName,
