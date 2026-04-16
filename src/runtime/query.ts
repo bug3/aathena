@@ -15,15 +15,20 @@ export function createQuery<TResult, TParams = Record<string, never>>(
   sqlPath: string,
   schemaDef?: Record<string, { validate(val: unknown): boolean }>,
 ): QueryFn<TResult, TParams> {
-  // Resolve relative sqlPath against the project root (where aathena.config.json lives)
-  const absolutePath = resolve(findProjectRoot(), sqlPath);
-
-  // Build the sql-render query function
-  const renderFn = schemaDef
-    ? sqlRenderDefine(absolutePath, schemaDef)
-    : sqlRenderDefine<TParams & Record<string, string | number | boolean>>(absolutePath);
+  // Defer project-root lookup and template load until the first call, so
+  // importing a generated query doesn't trigger filesystem I/O at module
+  // load time (important for bundled Lambda deploys and test isolation).
+  type RenderFn = (values: never) => { sql: string };
+  let renderFn: RenderFn | null = null;
 
   return async (client, params) => {
+    if (renderFn === null) {
+      const absolutePath = resolve(findProjectRoot(), sqlPath);
+      const built = schemaDef
+        ? sqlRenderDefine(absolutePath, schemaDef)
+        : sqlRenderDefine<TParams & Record<string, string | number | boolean>>(absolutePath);
+      renderFn = built as RenderFn;
+    }
     const { sql } = renderFn(params as never);
     return client.query<TResult>(sql);
   };
