@@ -137,7 +137,8 @@ function discoverSQLFiles(tablesDir: string, tablesDirRel: string): SQLFileInfo[
   const prefix = tablesDirRel.replace(/^\.\//, '');
 
   function walk(dir: string, relPath: string) {
-    for (const entry of readdirSync(dir)) {
+    // Sort for deterministic traversal across filesystems (readdirSync is unordered).
+    for (const entry of readdirSync(dir).sort()) {
       const fullPath = join(dir, entry);
       const stat = statSync(fullPath);
 
