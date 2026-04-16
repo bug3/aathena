@@ -129,6 +129,18 @@ describe('parseRow', () => {
     expect(row.data).toEqual({ tags: ['a', 'b', 'c'], ok: true });
   });
 
+  it('parses Athena scalar in scientific notation', () => {
+    const columns: ColumnMeta[] = [{ name: 'data', type: 'struct<x:double,y:double>', nullable: false }];
+    const row = parseRow<{ data: { x: number; y: number } }>(columns, ['{x=1.5e3, y=-2.1E-2}']);
+    expect(row.data).toEqual({ x: 1500, y: -0.021 });
+  });
+
+  it('parses Athena scalar with leading decimal point', () => {
+    const columns: ColumnMeta[] = [{ name: 'data', type: 'struct<v:double>', nullable: false }];
+    const row = parseRow<{ data: { v: number } }>(columns, ['{v=.5}']);
+    expect(row.data).toEqual({ v: 0.5 });
+  });
+
   it('parses Athena array of structs', () => {
     const columns: ColumnMeta[] = [{ name: 'items', type: 'array<struct<id:int,name:string>>', nullable: false }];
     const row = parseRow<{ items: { id: number; name: string }[] }>(columns, ['[{id=1, name=foo}, {id=2, name=bar}]']);

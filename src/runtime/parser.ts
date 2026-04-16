@@ -147,8 +147,8 @@ function parseAthenaScalar(s: string, pos: number): [string | number, number] {
   }
   const raw = s.slice(start, pos).trim();
 
-  // Try to parse as number
-  if (/^-?\d+(\.\d+)?$/.test(raw)) {
+  // Try to parse as number (covers 42, -3.14, .5, 1e5, -1.2E-3)
+  if (/^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(raw)) {
     return [Number(raw), pos];
   }
 
