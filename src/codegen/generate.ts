@@ -5,6 +5,7 @@ import { parseSQL } from './sql-parser';
 import { fetchTableSchema, type TableSchema } from './glue-fetcher';
 import { generateTypeFile } from './type-generator';
 import { generateQueryFile } from './query-generator';
+import { pascalCase, camelCase } from './utils';
 
 interface GenerateResult {
   typesGenerated: number;
@@ -225,11 +226,3 @@ function generateBarrelIndex(
   writeFileSync(resolve(outDir, 'index.ts'), lines.join('\n'), 'utf-8');
 }
 
-function pascalCase(str: string): string {
-  return str.split(/[_\-\s]+/).map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join('');
-}
-
-function camelCase(str: string): string {
-  const p = pascalCase(str);
-  return p.charAt(0).toLowerCase() + p.slice(1);
-}
