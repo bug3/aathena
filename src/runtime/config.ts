@@ -34,12 +34,34 @@ export function loadConfig(cwd?: string): AathenaConfig {
   const root = cwd ? resolve(cwd) : findProjectRoot();
   const configPath = resolve(root, CONFIG_FILE);
 
+  let raw: string;
   try {
-    const raw = readFileSync(configPath, 'utf-8');
-    return JSON.parse(raw) as AathenaConfig;
+    raw = readFileSync(configPath, 'utf-8');
   } catch {
     throw new Error(
       `Could not load aathena config. Expected ${CONFIG_FILE} at ${root}.`,
     );
   }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `Invalid JSON in ${configPath}: ${(err as Error).message}`,
+    );
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error(`Expected an object in ${configPath}.`);
+  }
+
+  const config = parsed as AathenaConfig;
+  if (typeof config.database !== 'string' || config.database.length === 0) {
+    throw new Error(
+      `Missing required field 'database' in ${configPath}.`,
+    );
+  }
+
+  return config;
 }

@@ -55,6 +55,22 @@ describe('loadConfig', () => {
     teardown();
   });
 
+  it('throws when database is missing', () => {
+    setup();
+    writeFileSync(join(TMP, 'aathena.config.json'), '{"region":"eu-west-1"}');
+
+    expect(() => loadConfig(TMP)).toThrow("Missing required field 'database'");
+    teardown();
+  });
+
+  it('throws on invalid JSON', () => {
+    setup();
+    writeFileSync(join(TMP, 'aathena.config.json'), '{ not valid json');
+
+    expect(() => loadConfig(TMP)).toThrow('Invalid JSON');
+    teardown();
+  });
+
   it('loads config by walking up when cwd is omitted', () => {
     setup();
     writeFileSync(
