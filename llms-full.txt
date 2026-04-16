@@ -2776,7 +2776,7 @@ publish:
 ````json
 {
   "name": "aathena",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Type-safe AWS Athena client for TypeScript",
   "author": "bug3",
   "license": "MIT",
@@ -2833,7 +2833,7 @@ publish:
   "dependencies": {
     "@aws-sdk/client-athena": "^3.750.0",
     "@aws-sdk/client-glue": "^3.750.0",
-    "sql-render": "^0.3.1"
+    "sql-render": "^0.3.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
