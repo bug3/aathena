@@ -24,7 +24,7 @@ async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
 
-  if (!command || command === 'help' || command === '--help') {
+  if (!command || command === 'help' || command === '--help' || command === '-h') {
     console.log(HELP);
     process.exit(0);
   }
