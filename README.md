@@ -244,6 +244,13 @@ try {
 
 - [sql-render](https://github.com/bug3/sql-render) - Type-safe SQL templating with injection protection (used internally)
 
+## For LLMs
+
+Two machine-readable summaries are maintained for AI consumption, following the [llms.txt](https://llmstxt.org) convention:
+
+- [llms.txt](llms.txt) - curated API reference and usage guide
+- [llms-full.txt](llms-full.txt) - full packed source, auto-generated on each push
+
 ## License
 
 [MIT](LICENSE)
