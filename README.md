@@ -30,22 +30,11 @@ npx aathena init
 
 `init` reads your AWS credentials, lists your Glue databases and Athena workgroups, and writes `aathena.config.json` + a starter SQL file under `tables/`. The `--force` flag overwrites an existing config; pass `--region`, `--database`, `--workgroup`, `--output-location` for non-interactive use (CI/automation).
 
-### 3. Add a query
-
-```bash
-npx aathena add events --from-schema
-```
-
-- `events` becomes `tables/{your-database}/events/default.sql`
-- `--from-schema` pulls Glue column metadata and embeds it as a comment block so you know the shape before writing the query
-- `add` auto-runs `generate` afterwards (disable with `--no-generate`)
-- For a different database: `npx aathena add sales.events` and pick "scaffold with binding" or "switch config" in the prompt
-
-### 4. Use it
+### 3. Use it
 
 ```typescript
 import { createClient } from 'aathena';
-import { defaultQuery as events } from './generated';
+import { events } from './generated';
 
 const athena = createClient();
 const result = await events(athena, {});
