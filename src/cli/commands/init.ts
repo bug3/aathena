@@ -200,17 +200,18 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
       selected,
     );
     for (const table of selected) {
-      const requiredPartitions = partitionsByTable.get(table) ?? [];
+      const info = partitionsByTable.get(table) ?? { partitions: [], notes: [] };
       const { path: sqlPath, contents, queryName } = buildSampleSql(
         database,
         table,
-        requiredPartitions,
+        info.partitions,
+        info.notes,
       );
       const absPath = resolve(cwd, sqlPath);
       mkdirSync(dirname(absPath), { recursive: true });
       if (!existsSync(absPath)) {
         writeFileSync(absPath, contents, 'utf-8');
-        scaffolded.push({ tableName: table, queryName, requiredPartitions });
+        scaffolded.push({ tableName: table, queryName, requiredPartitions: info.partitions });
         scaffoldedPaths.push(sqlPath);
       }
     }
@@ -268,12 +269,17 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
   return 0;
 }
 
+interface TablePartitionInfo {
+  partitions: RequiredPartition[];
+  notes: string[];
+}
+
 async function resolvePartitionsForSelected(
   region: string | undefined,
   database: string,
   tables: string[],
-): Promise<Map<string, RequiredPartition[]>> {
-  const out = new Map<string, RequiredPartition[]>();
+): Promise<Map<string, TablePartitionInfo>> {
+  const out = new Map<string, TablePartitionInfo>();
   if (tables.length === 0) return out;
 
   const spin = p.spinner();
@@ -285,10 +291,10 @@ async function resolvePartitionsForSelected(
   settled.forEach((res, i) => {
     const table = tables[i];
     if (res.status === 'fulfilled') {
-      out.set(table, res.value);
-      if (res.value.length > 0) withPartitions++;
+      out.set(table, { partitions: res.value.partitions, notes: res.value.notes });
+      if (res.value.partitions.length > 0) withPartitions++;
     } else {
-      out.set(table, []);
+      out.set(table, { partitions: [], notes: [] });
     }
   });
   spin.stop(
@@ -296,6 +302,13 @@ async function resolvePartitionsForSelected(
       ? `Partition probe done (${withPartitions} table(s) need WHERE predicates)`
       : 'Partition probe done',
   );
+
+  // Surface any view-trace or probe notes
+  for (const [table, info] of out) {
+    for (const note of info.notes) {
+      p.log.info(`${table}: ${note}`);
+    }
+  }
   return out;
 }
 
@@ -374,6 +387,7 @@ export function buildSampleSql(
   database: string,
   tableName?: string,
   requiredPartitions: RequiredPartition[] = [],
+  probeNotes: string[] = [],
 ): SampleSqlFile {
   const table = tableName ?? 'example_table';
   const queryName = 'default';
@@ -383,6 +397,11 @@ export function buildSampleSql(
     `-- Starter aathena query. Edit or delete as needed.`,
     `-- See README for placeholder and parameter syntax.`,
   ];
+
+  // Any view-trace or probe notes as informational comments
+  for (const note of probeNotes) {
+    lines.push(`-- ${note}`);
+  }
 
   // @param annotations for Athena-required partition predicates
   for (const part of requiredPartitions) {
