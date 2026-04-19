@@ -1,15 +1,26 @@
 import { generate } from '../codegen/generate';
 import { findProjectRoot, loadConfig } from '../runtime/config';
+import { parseArgs, flagString, flagBool } from './args';
+import { runInit } from './commands/init';
 
 const HELP = `
 aathena - Type-safe AWS Athena client with codegen
 
 Usage:
-  aathena generate    Fetch table schemas and generate typed query functions
-  aathena help        Show this help message
+  aathena init [flags]     Interactive scaffold for a new project
+  aathena generate         Fetch table schemas and generate typed query functions
+  aathena help             Show this help message
+
+Init flags:
+  --force                  Overwrite an existing aathena.config.json
+  --region <name>          Skip the region prompt
+  --database <name>        Skip the database prompt
+  --workgroup <name>       Skip the workgroup prompt
+  --output-location <s3>   Skip the output-location prompt
+  --no-sample              Do not write a sample SQL file
 
 Configuration:
-  Create aathena.config.json in your project root:
+  aathena looks for aathena.config.json in the project root:
 
   {
     "database": "sampledb",
@@ -21,12 +32,26 @@ Configuration:
 `;
 
 async function main() {
-  const args = process.argv.slice(2);
-  const command = args[0];
+  const argv = process.argv.slice(2);
+  const { positional, flags } = parseArgs(argv);
+  const command = positional[0];
 
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     console.log(HELP);
     process.exit(0);
+  }
+
+  if (command === 'init') {
+    const cwd = process.cwd();
+    const code = await runInit(cwd, {
+      force: flagBool(flags, 'force'),
+      region: flagString(flags, 'region'),
+      database: flagString(flags, 'database'),
+      workgroup: flagString(flags, 'workgroup'),
+      outputLocation: flagString(flags, 'output-location'),
+      noSample: flagBool(flags, 'sample') === false,
+    });
+    process.exit(code);
   }
 
   if (command === 'generate') {

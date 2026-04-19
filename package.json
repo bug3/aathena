@@ -57,6 +57,7 @@
   "dependencies": {
     "@aws-sdk/client-athena": "^3.1032.0",
     "@aws-sdk/client-glue": "^3.1032.0",
+    "@clack/prompts": "^1.2.0",
     "sql-render": "^0.3.4"
   },
   "optionalDependencies": {
