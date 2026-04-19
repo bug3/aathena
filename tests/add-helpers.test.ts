@@ -70,4 +70,9 @@ describe('buildQuerySql', () => {
     const sql = buildQuerySql('events', []);
     expect(sql).not.toContain('-- Columns:');
   });
+
+  it('does not include {{...}} placeholders the user did not write', () => {
+    const sql = buildQuerySql('events');
+    expect(sql).not.toMatch(/\{\{[^}]+\}\}/);
+  });
 });

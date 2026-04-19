@@ -78,6 +78,13 @@ describe('buildSampleSql', () => {
     expect(file.path).toBe('tables/sampledb/example_table/default.sql');
     expect(file.contents).toContain('FROM example_table');
   });
+
+  it('does not include {{...}} placeholders the user did not write', () => {
+    // sql-render treats any {{token}} in the file as a real param, including
+    // ones that only appear in example comments. Guard against regressions.
+    const file = buildSampleSql('sampledb', 'events');
+    expect(file.contents).not.toMatch(/\{\{[^}]+\}\}/);
+  });
 });
 
 describe('barrelExportName', () => {

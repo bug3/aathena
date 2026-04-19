@@ -326,7 +326,7 @@ export function buildSampleSql(database: string, tableName?: string): SampleSqlF
   const path = `tables/${database}/${table}/${queryName}.sql`;
   const contents =
     `-- Starter aathena query. Edit or delete as needed.\n` +
-    `-- Placeholders use {{name}} syntax; annotate types with '-- @param name type' on their own line.\n` +
+    `-- See README for placeholder and parameter syntax.\n` +
     `\n` +
     `SELECT *\n` +
     `FROM ${table}\n` +
