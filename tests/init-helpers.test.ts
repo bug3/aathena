@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildConfig, mergeGitignore, buildSampleSql } from '../src/cli/commands/init';
+import {
+  buildConfig,
+  mergeGitignore,
+  buildSampleSql,
+  buildMainExample,
+  barrelExportName,
+} from '../src/cli/commands/init';
 
 describe('buildConfig', () => {
   it('includes only fields with values', () => {
@@ -62,6 +68,7 @@ describe('buildSampleSql', () => {
   it('uses the provided table name in path and SQL', () => {
     const file = buildSampleSql('sampledb', 'events');
     expect(file.path).toBe('tables/sampledb/events/default.sql');
+    expect(file.queryName).toBe('default');
     expect(file.contents).toContain('FROM events');
     expect(file.contents).toContain('LIMIT 10');
   });
@@ -70,5 +77,51 @@ describe('buildSampleSql', () => {
     const file = buildSampleSql('sampledb');
     expect(file.path).toBe('tables/sampledb/example_table/default.sql');
     expect(file.contents).toContain('FROM example_table');
+  });
+});
+
+describe('barrelExportName', () => {
+  it('aliases reserved query names with {table}{Query}', () => {
+    expect(barrelExportName('events', 'default')).toBe('eventsDefault');
+    expect(barrelExportName('users', 'default')).toBe('usersDefault');
+  });
+
+  it('keeps non-reserved names as plain camelCase', () => {
+    expect(barrelExportName('events', 'latest')).toBe('latest');
+    expect(barrelExportName('orders', 'weekly_report')).toBe('weeklyReport');
+  });
+});
+
+describe('buildMainExample', () => {
+  it('produces a single-call template for one scaffolded query', () => {
+    const out = buildMainExample([{ tableName: 'events', queryName: 'default' }]);
+    expect(out).toContain(`import { createClient } from 'aathena';`);
+    expect(out).toContain(`import { eventsDefault } from '../generated';`);
+    expect(out).toContain('const events = await eventsDefault(athena, {});');
+    expect(out).not.toContain('parallel');
+  });
+
+  it('produces a parallel() template for 2+ scaffolded queries', () => {
+    const out = buildMainExample([
+      { tableName: 'events', queryName: 'default' },
+      { tableName: 'orders', queryName: 'default' },
+    ]);
+    expect(out).toContain(`import { createClient, parallel } from 'aathena';`);
+    expect(out).toContain(`import { eventsDefault, ordersDefault } from '../generated';`);
+    expect(out).toContain('const [events, orders] = await parallel(');
+    expect(out).toContain(`() => eventsDefault(athena, {}),`);
+    expect(out).toContain(`() => ordersDefault(athena, {}),`);
+    expect(out).toContain(`{ concurrency: 'auto', client: athena }`);
+  });
+
+  it('always ends with a main().catch wrapper', () => {
+    const out = buildMainExample([{ tableName: 'events', queryName: 'default' }]);
+    expect(out).toMatch(/main\(\)\.catch\(/);
+  });
+
+  it('falls back to a client.query ping when no queries are scaffolded', () => {
+    const out = buildMainExample([]);
+    expect(out).toContain(`createClient`);
+    expect(out).toContain(`SELECT 1 AS ping`);
   });
 });

@@ -28,20 +28,15 @@ npm install aathena
 npx aathena init
 ```
 
-`init` reads your AWS credentials, lists your Glue databases and Athena workgroups, and writes `aathena.config.json` + a starter SQL file under `tables/`. The `--force` flag overwrites an existing config; pass `--region`, `--database`, `--workgroup`, `--output-location` for non-interactive use (CI/automation).
+`init` reads your AWS credentials, lists your Glue databases and Athena workgroups, lets you multi-select which tables to scaffold SQL for, runs `generate`, and writes a runnable `src/main.ts` that imports and invokes every scaffolded query (single call or `parallel()` example depending on how many you picked). Pass `--region`, `--database`, `--workgroup`, `--output-location`, `--tables a,b,c` for non-interactive use; `--no-example` skips `src/main.ts`, `--no-generate` skips the auto-generate step.
 
-### 3. Use it
+### 3. Run it
 
-```typescript
-import { createClient } from 'aathena';
-import { events } from './generated';
-
-const athena = createClient();
-const result = await events(athena, {});
-
-result.rows[0].event_id;    // fully typed from Glue schema
-result.rows[0].created_at;  // Date
+```bash
+npx tsx src/main.ts
 ```
+
+The file is already wired to `./generated`, so you get rows printed from your actual tables. Open `src/main.ts` to shape the calls (params, destructuring, error handling), or delete it and write your own.
 
 ## Commands
 

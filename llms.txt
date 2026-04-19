@@ -13,20 +13,11 @@ Type-safe AWS Athena client for TypeScript. Write SQL, run codegen, get fully ty
 
 ```bash
 npm install aathena
-npx aathena init                        # interactive scaffold: region, database, workgroup, output location
-npx aathena add events --from-schema    # scaffold tables/<db>/events/default.sql + auto-generate
+npx aathena init          # scaffold config, SQL, generated/, and src/main.ts
+npx tsx src/main.ts       # run your first query
 ```
 
-Then:
-
-```typescript
-import { createClient } from 'aathena';
-import { defaultQuery as events } from './generated';
-
-const athena = createClient();
-const result = await events(athena, {});
-result.rows[0].event_id;  // typed from Glue
-```
+`init` picks a Glue database, lets the user multi-select tables to scaffold SQL for, runs `generate`, and writes a runnable `src/main.ts` that imports and invokes every scaffolded query.
 
 ## CLI commands
 
@@ -36,9 +27,9 @@ result.rows[0].event_id;  // typed from Glue
 aathena init [flags]
 ```
 
-Interactive scaffold. Reads AWS credentials, lists Glue databases + Athena workgroups, inherits workgroup output location when possible, writes `aathena.config.json`, updates `.gitignore` (adds `generated/` and `node_modules/`), and writes a starter SQL file.
+Interactive scaffold. Reads AWS credentials, lists Glue databases + Athena workgroups, inherits workgroup output location when possible, writes `aathena.config.json`, updates `.gitignore` (adds `generated/` and `node_modules/`), multi-selects tables to scaffold SQL for (`tables/<db>/<table>/default.sql`), auto-runs `generate`, and writes a runnable `src/main.ts` demonstrating how to call the generated queries (single call for 1 table, `parallel()` example for 2+).
 
-Flags: `--force` (overwrite existing config), `--region`, `--database`, `--workgroup`, `--output-location`, `--no-sample`.
+Flags: `--force` (overwrite existing config), `--region`, `--database`, `--workgroup`, `--output-location`, `--tables a,b,c` (non-interactive scaffold selection), `--no-sample` (skip SQL scaffolding), `--no-generate` (skip auto-generate), `--no-example` (skip `src/main.ts`).
 
 ### add
 

@@ -3,6 +3,7 @@ import { resolve, dirname } from 'node:path';
 import * as p from '@clack/prompts';
 import type { AathenaConfig } from '../../runtime/types';
 import { generate } from '../../codegen/generate';
+import { camelCase, pascalCase, isReservedWord } from '../../codegen/utils';
 import {
   listDatabases,
   listTables,
@@ -23,6 +24,13 @@ export interface InitFlags {
   tables?: string;
   /** Do not auto-run 'generate' after scaffolding. */
   noGenerate?: boolean;
+  /** Skip writing src/main.ts. */
+  noExample?: boolean;
+}
+
+interface ScaffoldedQuery {
+  tableName: string;
+  queryName: string;
 }
 
 const CONFIG_FILE = 'aathena.config.json';
@@ -179,27 +187,30 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
   }
 
   // Table scaffolding
-  const scaffolded: string[] = [];
+  const scaffolded: ScaffoldedQuery[] = [];
+  const scaffoldedPaths: string[] = [];
   if (!flags.noSample) {
     const selected = await resolveTablesToScaffold(effectiveRegion, database, flags.tables);
     for (const table of selected) {
-      const { path: sqlPath, contents } = buildSampleSql(database, table);
+      const { path: sqlPath, contents, queryName } = buildSampleSql(database, table);
       const absPath = resolve(cwd, sqlPath);
       mkdirSync(dirname(absPath), { recursive: true });
       if (!existsSync(absPath)) {
         writeFileSync(absPath, contents, 'utf-8');
-        scaffolded.push(sqlPath);
+        scaffolded.push({ tableName: table, queryName });
+        scaffoldedPaths.push(sqlPath);
       }
     }
-    if (scaffolded.length > 0) {
+    if (scaffoldedPaths.length > 0) {
       p.log.success(
-        `Scaffolded ${scaffolded.length} starter SQL file(s): ${scaffolded.join(', ')}`,
+        `Scaffolded ${scaffoldedPaths.length} starter SQL file(s): ${scaffoldedPaths.join(', ')}`,
       );
     }
   }
 
   // Auto-generate so the user lands with typed query functions ready to import
-  if (!flags.noGenerate && scaffolded.length > 0) {
+  const hasScaffolded = scaffolded.length > 0;
+  if (!flags.noGenerate && hasScaffolded) {
     const spin = p.spinner();
     spin.start('Running generate');
     try {
@@ -215,9 +226,24 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
     }
   }
 
-  const nextSteps =
-    scaffolded.length > 0 && !flags.noGenerate
-      ? `Next: import your query from ./generated. Use 'npx aathena add <table>' for more.`
+  // Starter TS file showing how to invoke the generated queries
+  let wroteMain = false;
+  if (!flags.noExample && !flags.noGenerate && hasScaffolded) {
+    const mainPath = resolve(cwd, 'src/main.ts');
+    if (existsSync(mainPath)) {
+      p.log.info('src/main.ts exists, not overwriting');
+    } else {
+      mkdirSync(dirname(mainPath), { recursive: true });
+      writeFileSync(mainPath, buildMainExample(scaffolded), 'utf-8');
+      p.log.success('Wrote src/main.ts');
+      wroteMain = true;
+    }
+  }
+
+  const nextSteps = wroteMain
+    ? `Next: npx tsx src/main.ts`
+    : hasScaffolded && !flags.noGenerate
+      ? `Next: import from ./generated and call your queries.`
       : `Next: run 'npx aathena generate' to produce typed query functions.`;
   p.outro(nextSteps);
   return 0;
@@ -291,11 +317,13 @@ export function mergeGitignore(existing: string): string {
 export interface SampleSqlFile {
   path: string;
   contents: string;
+  queryName: string;
 }
 
 export function buildSampleSql(database: string, tableName?: string): SampleSqlFile {
   const table = tableName ?? 'example_table';
-  const path = `tables/${database}/${table}/default.sql`;
+  const queryName = 'default';
+  const path = `tables/${database}/${table}/${queryName}.sql`;
   const contents =
     `-- Starter aathena query. Edit or delete as needed.\n` +
     `-- Placeholders use {{name}} syntax; annotate types with '-- @param name type' on their own line.\n` +
@@ -303,7 +331,101 @@ export function buildSampleSql(database: string, tableName?: string): SampleSqlF
     `SELECT *\n` +
     `FROM ${table}\n` +
     `LIMIT 10\n`;
-  return { path, contents };
+  return { path, contents, queryName };
+}
+
+/**
+ * Mirror of the barrel's export-name rule (see src/codegen/generate.ts).
+ * Reserved-word query names get aliased to `{table}{Query}`; otherwise the
+ * plain camelCase name is used. Returned name is the identifier the user
+ * imports from `./generated`.
+ */
+export function barrelExportName(tableName: string, queryName: string): string {
+  const camel = camelCase(queryName);
+  if (isReservedWord(camel)) {
+    return camelCase(tableName) + pascalCase(queryName);
+  }
+  return camel;
+}
+
+/**
+ * Produce a runnable TypeScript file that imports every scaffolded query and
+ * shows the user how to call them. Single scaffold -> one call; 2+ -> a
+ * parallel() demo so the user sees both invocation styles.
+ */
+export function buildMainExample(entries: ScaffoldedQuery[]): string {
+  if (entries.length === 0) return buildEmptyExample();
+
+  const exports = entries.map((e) => ({
+    ...e,
+    exportName: barrelExportName(e.tableName, e.queryName),
+  }));
+
+  const importList = exports.map((e) => e.exportName).join(', ');
+  const usesParallel = entries.length >= 2;
+  const runtimeImports = usesParallel ? 'createClient, parallel' : 'createClient';
+
+  const lines: string[] = [
+    `// Generated by 'aathena init'. Delete or adapt as needed.`,
+    `import { ${runtimeImports} } from 'aathena';`,
+    `import { ${importList} } from '../generated';`,
+    ``,
+    `async function main() {`,
+    `  const athena = createClient();`,
+    ``,
+  ];
+
+  if (!usesParallel) {
+    const only = exports[0];
+    lines.push(
+      `  const ${only.tableName} = await ${only.exportName}(athena, {});`,
+      `  console.log(\`${only.tableName}: \${${only.tableName}.rows.length} rows\`);`,
+    );
+  } else {
+    const binds = exports.map((e) => e.tableName).join(', ');
+    const calls = exports.map((e) => `      () => ${e.exportName}(athena, {}),`).join('\n');
+    const log = exports.map((e) => `${e.tableName}: \${${e.tableName}.rows.length} rows`).join(', ');
+    lines.push(
+      `  // Run all scaffolded queries in parallel. 'concurrency: auto' respects`,
+      `  // Athena's per-account service quota on active DML queries.`,
+      `  const [${binds}] = await parallel(`,
+      `    [`,
+      calls,
+      `    ],`,
+      `    { concurrency: 'auto', client: athena },`,
+      `  );`,
+      `  console.log(\`${log}\`);`,
+    );
+  }
+
+  lines.push(
+    `}`,
+    ``,
+    `main().catch((err) => {`,
+    `  console.error(err);`,
+    `  process.exit(1);`,
+    `});`,
+    ``,
+  );
+  return lines.join('\n');
+}
+
+function buildEmptyExample(): string {
+  return (
+    `// Generated by 'aathena init'. Delete or adapt as needed.\n` +
+    `import { createClient } from 'aathena';\n` +
+    `\n` +
+    `async function main() {\n` +
+    `  const athena = createClient();\n` +
+    `  const result = await athena.query('SELECT 1 AS ping');\n` +
+    `  console.log(result.rows);\n` +
+    `}\n` +
+    `\n` +
+    `main().catch((err) => {\n` +
+    `  console.error(err);\n` +
+    `  process.exit(1);\n` +
+    `});\n`
+  );
 }
 
 function formatAwsError(err: unknown): string {

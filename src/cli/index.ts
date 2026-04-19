@@ -22,6 +22,7 @@ Init flags:
   --tables <a,b,c>         Comma-separated tables to scaffold (skips multi-select)
   --no-sample              Do not scaffold any starter SQL
   --no-generate            Do not auto-run generate after scaffolding
+  --no-example             Do not write src/main.ts
 
 Add flags:
   --name <query-name>      Query filename (default: 'default')
@@ -62,6 +63,7 @@ async function main() {
       noSample: flagBool(flags, 'sample') === false,
       tables: flagString(flags, 'tables'),
       noGenerate: flagBool(flags, 'generate') === false,
+      noExample: flagBool(flags, 'example') === false,
     });
     process.exit(code);
   }
