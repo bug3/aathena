@@ -3560,12 +3560,12 @@ publish:
     "node": ">=20"
   },
   "dependencies": {
-    "@aws-sdk/client-athena": "^3.750.0",
-    "@aws-sdk/client-glue": "^3.750.0",
-    "sql-render": "^0.3.3"
+    "@aws-sdk/client-athena": "^3.1032.0",
+    "@aws-sdk/client-glue": "^3.1032.0",
+    "sql-render": "^0.3.4"
   },
   "optionalDependencies": {
-    "@aws-sdk/client-service-quotas": "^3.750.0"
+    "@aws-sdk/client-service-quotas": "^3.1032.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
