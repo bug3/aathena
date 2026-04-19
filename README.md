@@ -5,10 +5,10 @@
 [![license](https://img.shields.io/npm/l/aathena)](LICENSE)
 [![node](https://img.shields.io/node/v/aathena)](package.json)
 
-Type-safe AWS Athena client for TypeScript. Write SQL, run codegen, get fully typed query functions.
+Type-safe AWS Athena client for TypeScript.
 
-- Write SQL files with `{{variable}}` placeholders
 - Scaffold a project from AWS with `npx aathena init`
+- Edit scaffolded SQL files with `{{variable}}` placeholders
 - Fully type-safe parameters and results, sourced from your AWS Glue catalog
 - Auto-detects injected-projection partitions (including those hidden behind Presto/Trino views) and scaffolds the required WHERE predicates for you
 - Run queries concurrently with `parallel()`, which respects Athena's per-account service quota
@@ -80,9 +80,9 @@ npx aathena add events --name daily     # scaffold daily.sql instead of default.
 - `--force` - overwrite an existing SQL file
 - `--no-generate` - skip the auto-generate step
 
-## Writing SQL
+## Editing SQL
 
-Queries live under `tables/{database}/{table}/{query-name}.sql`. Placeholders use `{{name}}` syntax. Types are inferred from SQL context:
+Your scaffolded queries live under `tables/{database}/{table}/{query-name}.sql`. Open the file `init` (or `add`) created and shape it to your needs. Placeholders use `{{name}}` syntax. Types are inferred from SQL context:
 
 ```sql
 WHERE status = '{{status}}'    -- quoted       -> string
