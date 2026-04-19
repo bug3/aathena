@@ -2,14 +2,16 @@ import { generate } from '../codegen/generate';
 import { findProjectRoot, loadConfig } from '../runtime/config';
 import { parseArgs, flagString, flagBool } from './args';
 import { runInit } from './commands/init';
+import { runAdd } from './commands/add';
 
 const HELP = `
 aathena - Type-safe AWS Athena client with codegen
 
 Usage:
-  aathena init [flags]     Interactive scaffold for a new project
-  aathena generate         Fetch table schemas and generate typed query functions
-  aathena help             Show this help message
+  aathena init [flags]                Interactive scaffold for a new project
+  aathena add <table> [flags]         Scaffold a new query (use 'db.table' for cross-database)
+  aathena generate                    Fetch table schemas and generate typed query functions
+  aathena help                        Show this help message
 
 Init flags:
   --force                  Overwrite an existing aathena.config.json
@@ -18,6 +20,12 @@ Init flags:
   --workgroup <name>       Skip the workgroup prompt
   --output-location <s3>   Skip the output-location prompt
   --no-sample              Do not write a sample SQL file
+
+Add flags:
+  --name <query-name>      Query filename (default: 'default')
+  --from-schema            Fetch Glue columns and include them as a comment block
+  --no-generate            Do not auto-run generate after scaffolding
+  --force                  Overwrite an existing SQL file
 
 Configuration:
   aathena looks for aathena.config.json in the project root:
@@ -50,6 +58,17 @@ async function main() {
       workgroup: flagString(flags, 'workgroup'),
       outputLocation: flagString(flags, 'output-location'),
       noSample: flagBool(flags, 'sample') === false,
+    });
+    process.exit(code);
+  }
+
+  if (command === 'add') {
+    const cwd = process.cwd();
+    const code = await runAdd(cwd, positional[1], {
+      name: flagString(flags, 'name'),
+      fromSchema: flagBool(flags, 'from-schema'),
+      noGenerate: flagBool(flags, 'generate') === false,
+      force: flagBool(flags, 'force'),
     });
     process.exit(code);
   }
