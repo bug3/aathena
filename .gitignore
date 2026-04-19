@@ -22,3 +22,6 @@ playground/
 
 # Claude
 .claude/
+
+# Local test artifacts
+*.tgz
