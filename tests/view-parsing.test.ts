@@ -103,12 +103,12 @@ describe('extractViewReferences', () => {
   it('decodes a Presto-view base64 marker and parses its originalSql', () => {
     const payload = Buffer.from(
       JSON.stringify({
-        originalSql: 'SELECT tenant_id FROM raw.events_raw',
+        originalSql: 'SELECT tenant_id FROM analytics.events_raw',
       }),
     ).toString('base64');
     const viewText = `/* Presto View: ${payload} */`;
-    expect(extractViewReferences(viewText, 'raw')).toEqual([
-      { database: 'raw', tableName: 'events_raw' },
+    expect(extractViewReferences(viewText, 'analytics')).toEqual([
+      { database: 'analytics', tableName: 'events_raw' },
     ]);
   });
 
