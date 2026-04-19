@@ -209,9 +209,11 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
       );
       const absPath = resolve(cwd, sqlPath);
       mkdirSync(dirname(absPath), { recursive: true });
+      // Track every selected table so main.ts reflects the full selection
+      // even on re-runs where the SQL already exists.
+      scaffolded.push({ tableName: table, queryName, requiredPartitions: info.partitions });
       if (!existsSync(absPath)) {
         writeFileSync(absPath, contents, 'utf-8');
-        scaffolded.push({ tableName: table, queryName, requiredPartitions: info.partitions });
         scaffoldedPaths.push(sqlPath);
       }
     }
@@ -229,8 +231,8 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
   }
 
   // Auto-generate so the user lands with typed query functions ready to import
-  const hasScaffolded = scaffolded.length > 0;
-  if (!flags.noGenerate && hasScaffolded) {
+  const hasSelection = scaffolded.length > 0;
+  if (!flags.noGenerate && hasSelection) {
     const spin = p.spinner();
     spin.start('Running generate');
     try {
@@ -246,23 +248,27 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
     }
   }
 
-  // Starter TS file showing how to invoke the generated queries
+  // Starter TS file showing how to invoke the generated queries. Overwritten
+  // under --force so re-running init with a new table selection refreshes
+  // the example; SQL files are always preserved because the user may have
+  // edited them.
   let wroteMain = false;
-  if (!flags.noExample && !flags.noGenerate && hasScaffolded) {
+  if (!flags.noExample && !flags.noGenerate && hasSelection) {
     const mainPath = resolve(cwd, 'src/main.ts');
-    if (existsSync(mainPath)) {
-      p.log.info('src/main.ts exists, not overwriting');
+    const existed = existsSync(mainPath);
+    if (existed && !flags.force) {
+      p.log.info('src/main.ts exists, not overwriting (use --force to regenerate)');
     } else {
       mkdirSync(dirname(mainPath), { recursive: true });
       writeFileSync(mainPath, buildMainExample(scaffolded), 'utf-8');
-      p.log.success('Wrote src/main.ts');
+      p.log.success(existed ? 'Rewrote src/main.ts' : 'Wrote src/main.ts');
       wroteMain = true;
     }
   }
 
   const nextSteps = wroteMain
     ? `Next: npx tsx src/main.ts`
-    : hasScaffolded && !flags.noGenerate
+    : hasSelection && !flags.noGenerate
       ? `Next: import from ./generated and call your queries.`
       : `Next: run 'npx aathena generate' to produce typed query functions.`;
   p.outro(nextSteps);
