@@ -144,6 +144,19 @@ row.addr.city     // string, direct access just like the source data
 
 No `CAST()`, no extra views, no manual `JSON.parse()` needed.
 
+### Query statistics
+
+Every `QueryResult` includes a `statistics: QueryStatistics` block from `GetQueryExecution`. Pass `{ includeRuntimeStats: true }` to `client.query()` for input/output row counts via an extra `GetQueryRuntimeStatistics` call.
+
+```typescript
+const result = await athena.query<Row>(sql, { includeRuntimeStats: true });
+result.statistics.totalExecutionTimeInMillis;
+result.statistics.resultReused;
+result.statistics.runtime?.outputRows;
+```
+
+Fields: `engineExecutionTimeInMillis`, `totalExecutionTimeInMillis`, `queryQueueTimeInMillis`, `queryPlanningTimeInMillis`, `servicePreProcessingTimeInMillis`, `serviceProcessingTimeInMillis`, `dataScannedInBytes`, `dpuCount?`, `resultReused?`, `runtime?: { inputRows?, inputBytes?, outputRows?, outputBytes? }` (opt-in).
+
 ### Error classes
 
 - `AathenaError` - base error
@@ -160,7 +173,7 @@ No `CAST()`, no extra views, no manual `JSON.parse()` needed.
 - `schema` - parameter validation descriptors (re-exported from sql-render)
 - `defineConfig` - config helper
 - `AathenaError`, `QueryTimeoutError`, `QueryFailedError`, `QueryCancelledError`, `ColumnParseError` - error classes
-- Types: `AathenaConfig`, `QueryResult`, `ColumnMeta`
+- Types: `AathenaConfig`, `QueryResult`, `QueryStatistics`, `QueryRuntimeRows`, `QueryOptions`, `ColumnMeta`
 
 ### Exports (aathena/runtime)
 

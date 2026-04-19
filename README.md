@@ -218,6 +218,31 @@ Place `aathena.config.json` at the root of your project. The CLI and runtime wil
 | `query.pollingInterval` | `500` | Initial poll interval in ms |
 | `query.maxPollingInterval` | `5000` | Max poll interval in ms |
 
+## Query Statistics
+
+Every `QueryResult` includes a `statistics` block from Athena (cost tracking, queueing visibility, cache hits). Pass `{ includeRuntimeStats: true }` to additionally fetch input/output row counts via an extra `GetQueryRuntimeStatistics` API call.
+
+```typescript
+const result = await athena.query<Row>(sql, { includeRuntimeStats: true });
+result.statistics.totalExecutionTimeInMillis;   // 8128
+result.statistics.resultReused;                 // true
+result.statistics.runtime?.outputRows;          // 99
+```
+
+| Field | Notes |
+|---|---|
+| `engineExecutionTimeInMillis` | Engine execution time |
+| `totalExecutionTimeInMillis` | Wall time Athena took |
+| `queryQueueTimeInMillis` | Time spent waiting in the queue |
+| `queryPlanningTimeInMillis` | Planning + partition retrieval |
+| `servicePreProcessingTimeInMillis` | Preprocessing before engine |
+| `serviceProcessingTimeInMillis` | Result publication |
+| `dataScannedInBytes` | Drives query cost |
+| `dpuCount?` | Capacity-reservation workgroups only |
+| `resultReused?` | True if served from result cache |
+| `runtime?.inputRows` / `inputBytes` | Opt-in via `includeRuntimeStats` |
+| `runtime?.outputRows` / `outputBytes` | Opt-in via `includeRuntimeStats` |
+
 ## Error Handling
 
 ```typescript
