@@ -7,13 +7,12 @@
 
 Type-safe AWS Athena client for TypeScript. Write SQL, run codegen, get fully typed query functions.
 
-```bash
-npm install aathena
-npx aathena init      # interactive setup: region, database, workgroup
-npx aathena add events --from-schema  # scaffold a starter query + auto-generate
-```
+- Write SQL files with `{{variable}}` placeholders
+- Scaffold a project from AWS with `npx aathena init`
+- Fully type-safe parameters and results, sourced from your AWS Glue catalog
+- Run queries concurrently with `parallel()`, which respects Athena's per-account service quota
 
-That's it. You have a fully typed `events` query ready to import. Edit the SQL, re-run `generate`, and everything stays in sync.
+Built on [@aws-sdk/client-athena](https://www.npmjs.com/package/@aws-sdk/client-athena) and [sql-render](https://github.com/bug3/sql-render). See the [`examples/`](examples/) directory for a working project structure.
 
 ## Quick Start (under 60 seconds)
 

@@ -2,7 +2,12 @@
 
 > Type-safe AWS Athena client for TypeScript with codegen
 
-aathena generates fully typed query functions from SQL files and AWS Glue table schemas. Write SQL with `{{variable}}` placeholders, run codegen, get type-safe functions with validated parameters and parsed results.
+Type-safe AWS Athena client for TypeScript. Write SQL, run codegen, get fully typed query functions.
+
+- Write SQL files with `{{variable}}` placeholders
+- Scaffold a project from AWS with `npx aathena init`
+- Fully type-safe parameters and results, sourced from your AWS Glue catalog
+- Run queries concurrently with `parallel()`, which respects Athena's per-account service quota
 
 ## 60-second onboarding
 
