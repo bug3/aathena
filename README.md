@@ -7,111 +7,86 @@
 
 Type-safe AWS Athena client for TypeScript. Write SQL, run codegen, get fully typed query functions.
 
-- Write SQL files with `{{variable}}` placeholders
-- Run `npx aathena generate` to create types and query functions from AWS Glue schemas
-- Import and call with full type safety on both parameters and results
+```bash
+npm install aathena
+npx aathena init      # interactive setup: region, database, workgroup
+npx aathena add events --from-schema  # scaffold a starter query + auto-generate
+```
 
-Built on [@aws-sdk/client-athena](https://www.npmjs.com/package/@aws-sdk/client-athena) and [sql-render](https://github.com/bug3/sql-render). See the [`examples/`](examples/) directory for a working project structure.
+That's it. You have a fully typed `events` query ready to import. Edit the SQL, re-run `generate`, and everything stays in sync.
 
-## Installation
+## Quick Start (under 60 seconds)
+
+### 1. Install
 
 ```bash
 npm install aathena
 ```
 
-## Quick Start
-
-### 1. Create config
-
-```json
-// aathena.config.json
-{
-  "database": "sampledb",
-  "workgroup": "primary",
-  "outputLocation": "s3://my-bucket/athena-results/"
-}
-```
-
-### 2. Write SQL
-
-Create a file under `tables/{database}/{table}/{query}.sql`:
-
-```sql
--- tables/sampledb/events/product.sql
-SELECT event_id, event_name, price, created_at
-FROM events
-WHERE status = '{{status}}'
-LIMIT {{limit}}
-```
-
-### 3. Generate
+### 2. Initialize
 
 ```bash
-npx aathena generate
+npx aathena init
 ```
 
-Codegen fetches your table schema from AWS Glue and generates typed query functions:
+`init` reads your AWS credentials, lists your Glue databases and Athena workgroups, and writes `aathena.config.json` + a starter SQL file under `tables/`. The `--force` flag overwrites an existing config; pass `--region`, `--database`, `--workgroup`, `--output-location` for non-interactive use (CI/automation).
 
-```
-generated/
-├── types/sampledb/
-│   └── events.ts          # interface Events { event_id: number; ... }
-├── queries/sampledb/events/
-│   └── product.ts         # export const product = createQuery<Events, ProductParams>(...)
-└── index.ts               # barrel exports
+### 3. Add a query
+
+```bash
+npx aathena add events --from-schema
 ```
 
-### 4. Use
+- `events` becomes `tables/{your-database}/events/default.sql`
+- `--from-schema` pulls Glue column metadata and embeds it as a comment block so you know the shape before writing the query
+- `add` auto-runs `generate` afterwards (disable with `--no-generate`)
+- For a different database: `npx aathena add sales.events` and pick "scaffold with binding" or "switch config" in the prompt
+
+### 4. Use it
 
 ```typescript
 import { createClient } from 'aathena';
-import { product } from './generated';
+import { defaultQuery as events } from './generated';
 
-const athena = createClient(); // reads from aathena.config.json
+const athena = createClient();
+const result = await events(athena, {});
 
-const result = await product(athena, { status: 'active', limit: 99 });
-
-result.rows[0].event_id    // number
-result.rows[0].event_name  // string
-result.rows[0].price       // string (decimal - precision safe)
-result.rows[0].created_at  // Date
+result.rows[0].event_id;    // fully typed from Glue schema
+result.rows[0].created_at;  // Date
 ```
 
-You can also pass config explicitly: `createClient({ database: 'mydb', outputLocation: 's3://...' })`.
+## Commands
 
-## Directory Structure
+| Command | Purpose |
+|---|---|
+| `aathena init` | Interactive project scaffold. Fills config from AWS (region, Glue databases, Athena workgroups, workgroup output location). |
+| `aathena add <table>` | Scaffold a new query under `tables/{database}/{table}/<name>.sql`. Accepts `db.table` for cross-database tables and prompts to resolve mismatches. |
+| `aathena generate` | Re-run codegen (fetch Glue schemas, produce typed query functions). Runs automatically after `add` unless `--no-generate`. |
+| `aathena help` | Show all flags. |
 
-```
-project/
-├── aathena.config.json         # project root marker (required)
-├── tables/                     # SQL files go here
-│   └── sampledb/               # database name
-│       ├── events/             # table name
-│       │   ├── product.sql
-│       │   └── category.sql
-│       └── users/
-│           └── active.sql
-├── generated/                  # codegen output (gitignored)
-└── src/
-```
+### Add flags
 
-`aathena.config.json` must be at the project root. Both the CLI and runtime use it to locate SQL files, so queries work regardless of the working directory.
+- `--name <query-name>` - query filename (default: `default`)
+- `--from-schema` - include Glue column list as a comment block
+- `--force` - overwrite an existing SQL file
+- `--no-generate` - skip the auto-generate step
 
-Convention: `tables/{database}/{table}/{query}.sql`. Nested grouping (e.g. `events/cart/add.sql`) is supported.
+## Writing SQL
 
-## Parameter Type Inference
+Queries live under `tables/{database}/{table}/{query-name}.sql`. The file path drives two things:
 
-Parameter types are inferred automatically from SQL context:
+1. **Which Glue table** codegen fetches the schema from (for result types)
+2. **Which database** the query runs against at runtime (the directory database is used even if it differs from your project's primary `config.database`)
+
+Placeholders use `{{name}}` syntax. Types are inferred from context:
 
 ```sql
-WHERE status = '{{status}}'      -- quoted       → string
-LIMIT {{limit}}                  -- LIMIT/OFFSET → number
-WHERE price >= {{minPrice}}      -- comparison   → number
+WHERE status = '{{status}}'    -- quoted       -> string
+LIMIT {{limit}}                -- LIMIT/OFFSET -> number (positiveInt)
+WHERE price >= {{minPrice}}    -- comparison   -> number
 ```
 
-### Explicit Types with `@param`
-
-For stricter validation, add `@param` annotations:
+For stricter validation, annotate with `-- @param`:
 
 ```sql
 -- @param status enum('active','pending','done')
@@ -124,17 +99,17 @@ WHERE status = '{{status}}'
 LIMIT {{limit}}
 ```
 
-Generates narrower types with runtime validation:
+Generates:
 
 ```typescript
-interface ProductParams {
-  status: 'active' | 'pending' | 'done';  // union type
-  limit: number;                           // validated > 0
-  startDate: string;                       // validated YYYY-MM-DD
+interface DefaultParams {
+  status: 'active' | 'pending' | 'done';
+  limit: number;                  // validated > 0
+  startDate: string;              // validated YYYY-MM-DD
 }
 ```
 
-### Available `@param` Types
+### Available `@param` types
 
 | Annotation | TypeScript | Validation |
 |---|---|---|
@@ -149,11 +124,9 @@ interface ProductParams {
 | `s3Path` | `string` | `s3://bucket/path` |
 | `enum('a','b','c')` | `'a' \| 'b' \| 'c'` | Whitelist |
 
-Inference and annotations can be mixed in the same file. Annotations take priority.
-
 ## Type Mapping
 
-Table types are generated from the AWS Glue Data Catalog:
+Glue column types map directly to TypeScript:
 
 | Athena | TypeScript | Notes |
 |---|---|---|
@@ -171,24 +144,64 @@ Table types are generated from the AWS Glue Data Catalog:
 | `map<K, V>` | `Record<K, V>` | Recursive |
 | `struct<a:T, b:U>` | `{ a: T; b: U }` | Recursive |
 
-### Complex Types
+### Complex types handled automatically
 
-Athena's complex types (`array`, `map`, `struct`) are fully supported, both in generated TypeScript types and at runtime parsing. Nested combinations like `array<map<string, struct<...>>>` work recursively.
-
-This is a common pain point with Athena: the AWS SDK returns every value as a flat string, leaving you to manually parse complex types. Without aathena, you're stuck with workarounds: writing `CAST()` expressions in SQL, creating extra views, or manually calling `JSON.parse()` and hoping the shape is right. aathena handles this automatically, your Parquet/ORC native types map 1:1 to TypeScript, no conversion needed.
+Athena returns every value as a flat string at the SDK level, even when the underlying Parquet/ORC columns are native arrays, maps, or structs. aathena parses them back to native shapes recursively - no `CAST()`, extra views, or manual `JSON.parse` required.
 
 ```typescript
-// Glue schema: tags array<varchar>, metadata map<string,integer>, address struct<city:string,zip:integer>
-
-result.rows[0].tags      // string[]
-result.rows[0].metadata  // Record<string, number>
-result.rows[0].address   // { city: string; zip: number }
-result.rows[0].address.city  // string, direct access just like the source data
+// Glue: tags array<varchar>, metadata map<string,integer>, address struct<city:string,zip:integer>
+row.tags;            // string[]
+row.metadata;        // Record<string, number>
+row.address;         // { city: string; zip: number }
+row.address.city;    // string, direct access
 ```
+
+## Running Queries in Parallel
+
+`parallel()` runs multiple queries concurrently with a bounded cap that respects Athena's per-account active-DML quota. Tasks are passed as thunks (`() => query(...)`) so the helper can gate when each query actually starts.
+
+```typescript
+import { createClient, parallel } from 'aathena';
+import { getUsers, getOrders } from './generated';
+
+const athena = createClient();
+
+const [users, orders] = await parallel(
+  [
+    () => getUsers(athena, { limit: 100 }),
+    () => getOrders(athena, { from: '2026-01-01' }),
+  ],
+  { concurrency: 'auto', client: athena },
+);
+```
+
+### Concurrency resolution
+
+`concurrency` accepts a number or `'auto'`. With `'auto'`, the cap is resolved in this order:
+
+1. `AathenaConfig.maxConcurrency` if set
+2. Live AWS Service Quotas lookup (`L-D405C694` DML, `L-FCDFE414` DDL)
+3. Region-aware conservative fallback (50% of AWS-documented default, clamped to `[5, 25]`)
+
+The live lookup uses `@aws-sdk/client-service-quotas`, an optional dependency loaded via dynamic import. It requires the `servicequotas:GetServiceQuota` IAM permission; without it the lookup fails silently and the fallback is used.
+
+### Options
+
+| Option | Default | Description |
+|---|---|---|
+| `concurrency` | `5` | `number` or `'auto'` |
+| `client` | - | Required when `concurrency: 'auto'` and `maxConcurrency` is unset |
+| `kind` | `'dml'` | `'dml'` or `'ddl'`, selects which quota to probe |
+| `reserveHeadroom` | `1` | Subtracted from the resolved quota |
+| `mode` | `'all'` | `'all'` rejects on first failure; `'allSettled'` returns per-task settlements |
+
+### Automatic retry on throttling
+
+`client.query()` (and anything built on it) retries `StartQueryExecution` with exponential backoff + full jitter when Athena responds with `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED`. Up to 6 attempts. Works whether or not you use `parallel()`.
 
 ## Config
 
-Place `aathena.config.json` at the root of your project. The CLI and runtime will walk up the directory tree to find it automatically.
+`aathena.config.json` lives at your project root. `init` writes it for you; edit as needed afterwards. Both the CLI and runtime walk up the directory tree to find it.
 
 ```json
 {
@@ -209,7 +222,7 @@ Place `aathena.config.json` at the root of your project. The CLI and runtime wil
 | Field | Default | Description |
 |---|---|---|
 | `region` | AWS default | AWS region |
-| `database` | *required* | Default Athena database |
+| `database` | *required* | Primary Athena database (used when a query's directory doesn't specify otherwise) |
 | `workgroup` | - | Athena workgroup |
 | `outputLocation` | - | S3 path for query results (optional if workgroup has a default) |
 | `tablesDir` | `./tables` | SQL files directory |
@@ -221,7 +234,7 @@ Place `aathena.config.json` at the root of your project. The CLI and runtime wil
 
 ## Query Statistics
 
-Every `QueryResult` includes a `statistics` block from Athena (cost tracking, queueing visibility, cache hits). Pass `{ includeRuntimeStats: true }` to additionally fetch input/output row counts via an extra `GetQueryRuntimeStatistics` API call.
+Every `QueryResult` includes a `statistics` block from Athena (cost tracking, queueing visibility, cache hits). Pass `{ includeRuntimeStats: true }` for input/output row counts via an extra `GetQueryRuntimeStatistics` API call.
 
 ```typescript
 const result = await athena.query<Row>(sql, { includeRuntimeStats: true });
@@ -244,53 +257,36 @@ result.statistics.runtime?.outputRows;          // 99
 | `runtime?.inputRows` / `inputBytes` | Opt-in via `includeRuntimeStats` |
 | `runtime?.outputRows` / `outputBytes` | Opt-in via `includeRuntimeStats` |
 
-## Running Queries in Parallel
+## Cross-Database Queries
 
-`parallel()` runs multiple queries concurrently with a bounded cap that respects Athena's per-account service quota on active DML/DDL queries. Tasks are passed as thunks (`() => query(...)`) so the helper can gate when each query actually starts.
+By default every query runs against `config.database`. When a SQL file lives in `tables/{other-db}/...` (different from `config.database`), `generate` automatically emits an explicit per-query binding so it routes to that database at runtime:
 
 ```typescript
-import { createClient, parallel } from 'aathena';
-import { getUsers, getOrders } from './generated';
-
-const athena = createClient();
-
-const [users, orders] = await parallel(
-  [
-    () => getUsers(athena, { limit: 100 }),
-    () => getOrders(athena, { from: '2026-01-01' }),
-  ],
-  { concurrency: 'auto', client: athena },
+// generated/queries/sales/events/default.ts (primary config.database is 'marketing')
+export const default_ = createQuery<Events, DefaultParams>(
+  'tables/sales/events/default.sql',
+  schemaDef,
+  { database: 'sales' },
 );
-
-users.rows[0].id;      // fully typed per query
-orders.rows[0].total;
 ```
 
-### Concurrency resolution
+You don't write this yourself - `add <db>.<table>` and `generate` handle it. Use `client.query(sql, { database: 'sales' })` for the same effect on ad-hoc inline queries.
 
-`concurrency` accepts a number or `'auto'`. With `'auto'`, the cap is resolved in this order:
+## Directory Structure
 
-1. `AathenaConfig.maxConcurrency` if set
-2. Live value from AWS Service Quotas (quota `L-D405C694` for DML, `L-FCDFE414` for DDL)
-3. A conservative region-aware fallback (50% of the AWS-documented default, clamped to `[5, 25]`)
+```
+project/
+├── aathena.config.json        # project root marker, written by 'init'
+├── tables/                    # SQL files
+│   └── sampledb/              # database
+│       └── events/            # table
+│           ├── default.sql
+│           └── daily.sql
+├── generated/                 # codegen output (gitignored)
+└── src/
+```
 
-The live lookup uses `@aws-sdk/client-service-quotas` (declared as an optional dependency, loaded via dynamic import). It requires the `servicequotas:GetServiceQuota` IAM permission. When the permission is missing the call fails silently and the fallback is used.
-
-`reserveHeadroom` (default `1`) is subtracted from the resolved quota to leave room for other workloads.
-
-### Options
-
-| Option | Default | Description |
-|---|---|---|
-| `concurrency` | `5` | `number` or `'auto'` |
-| `client` | - | Required when `concurrency: 'auto'` and `maxConcurrency` is unset |
-| `kind` | `'dml'` | `'dml'` or `'ddl'`, selects which quota to probe |
-| `reserveHeadroom` | `1` | Subtracted from the resolved quota |
-| `mode` | `'all'` | `'all'` rejects on first failure; `'allSettled'` returns per-task settlements |
-
-### Retry on concurrent-limit throttling
-
-`client.query()` (and anything built on it) retries `StartQueryExecution` automatically when Athena responds with `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED`. Backoff is exponential with full jitter, up to 6 attempts. This protects against transient spikes and quota changes even when `parallel()` is not used.
+Nested grouping under a table (e.g. `events/cart/add.sql`) works too - codegen walks the whole tree under `tables/`.
 
 ## Error Handling
 
@@ -303,7 +299,7 @@ import {
 } from 'aathena';
 
 try {
-  const result = await product(athena, { status: 'active', limit: 99 });
+  const result = await events(athena, { status: 'active', limit: 99 });
 } catch (err) {
   if (err instanceof QueryTimeoutError) {
     console.log(`Timed out after ${err.timeoutMs}ms: ${err.queryExecutionId}`);
@@ -314,9 +310,20 @@ try {
 }
 ```
 
+## Requirements
+
+- Node.js >= 20
+- AWS credentials resolvable via the default provider chain (env, shared config, SSO, IAM role, etc.)
+- IAM permissions:
+  - `athena:StartQueryExecution`, `athena:GetQueryExecution`, `athena:GetQueryResults` (runtime)
+  - `athena:ListWorkGroups`, `athena:GetWorkGroup` (init)
+  - `glue:GetDatabases`, `glue:GetTables`, `glue:GetTable` (init, add, generate)
+  - `servicequotas:GetServiceQuota` (optional, enables `parallel({ concurrency: 'auto' })`)
+  - Your query's S3 read + output-bucket write permissions
+
 ## Related
 
-- [sql-render](https://github.com/bug3/sql-render) - Type-safe SQL templating with injection protection (used internally)
+- [sql-render](https://github.com/bug3/sql-render) - type-safe SQL templating with injection protection (used internally)
 
 ## For LLMs
 
