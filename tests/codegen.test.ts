@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { generateTypeFile } from '../src/codegen/type-generator';
 import { generateQueryFile } from '../src/codegen/query-generator';
 import { parseSQL } from '../src/codegen/sql-parser';
+import { buildBarrelContent } from '../src/codegen/generate';
+import { safeIdentifier, isReservedWord } from '../src/codegen/utils';
 import type { TableSchema } from '../src/codegen/glue-fetcher';
 
 describe('generateTypeFile', () => {
@@ -147,5 +149,116 @@ SELECT * FROM events WHERE status = '{{status}}'`;
     expect(output).toContain('schemaDef');
     expect(output).toContain(`{ database: 'sales' }`);
     expect(output).not.toContain('undefined,');
+  });
+});
+
+describe('safeIdentifier / isReservedWord', () => {
+  it('flags JS keywords as reserved', () => {
+    expect(isReservedWord('default')).toBe(true);
+    expect(isReservedWord('class')).toBe(true);
+    expect(isReservedWord('return')).toBe(true);
+    expect(isReservedWord('await')).toBe(true);
+    expect(isReservedWord('yield')).toBe(true);
+  });
+
+  it('passes non-reserved names through', () => {
+    expect(isReservedWord('events')).toBe(false);
+    expect(isReservedWord('product')).toBe(false);
+    expect(safeIdentifier('events')).toBe('events');
+    expect(safeIdentifier('latest')).toBe('latest');
+  });
+
+  it('suffixes reserved words with _', () => {
+    expect(safeIdentifier('default')).toBe('default_');
+    expect(safeIdentifier('class')).toBe('class_');
+  });
+});
+
+describe('generateQueryFile reserved-word handling', () => {
+  it('emits a safe identifier for a default.sql file', () => {
+    const sql = `SELECT COUNT(*) AS cnt FROM events`;
+    const parsed = parseSQL(sql);
+
+    const output = generateQueryFile({
+      sqlRelativePath: 'tables/sampledb/events/default.sql',
+      tableName: 'events',
+      database: 'sampledb',
+      primaryDatabase: 'sampledb',
+      parsed,
+      typesImportPath: '../../types/sampledb/events',
+    });
+
+    expect(output).toContain('export const default_ = createQuery');
+    expect(output).not.toMatch(/export const default = /);
+  });
+});
+
+describe('buildBarrelContent', () => {
+  const schemas = new Map([
+    ['sampledb.events', { database: 'sampledb', tableName: 'events', columns: [] }],
+  ]);
+
+  it('aliases a reserved-word query even when it is the only one', () => {
+    const out = buildBarrelContent(
+      [
+        {
+          database: 'sampledb',
+          tableName: 'events',
+          queryName: 'default',
+          relativeDirFromTables: 'sampledb/events',
+        },
+      ],
+      schemas,
+    );
+    expect(out).toContain(
+      `export { default_ as eventsDefault } from './queries/sampledb/events/default';`,
+    );
+  });
+
+  it('exports a plain name when not reserved and not duplicated', () => {
+    const out = buildBarrelContent(
+      [
+        {
+          database: 'sampledb',
+          tableName: 'events',
+          queryName: 'latest',
+          relativeDirFromTables: 'sampledb/events',
+        },
+      ],
+      schemas,
+    );
+    expect(out).toContain(
+      `export { latest } from './queries/sampledb/events/latest';`,
+    );
+  });
+
+  it('aliases duplicates across tables with {table}{Query}', () => {
+    const twoTableSchemas = new Map([
+      ['sampledb.events', { database: 'sampledb', tableName: 'events', columns: [] }],
+      ['sampledb.users', { database: 'sampledb', tableName: 'users', columns: [] }],
+    ]);
+    const out = buildBarrelContent(
+      [
+        {
+          database: 'sampledb',
+          tableName: 'events',
+          queryName: 'latest',
+          relativeDirFromTables: 'sampledb/events',
+        },
+        {
+          database: 'sampledb',
+          tableName: 'users',
+          queryName: 'latest',
+          relativeDirFromTables: 'sampledb/users',
+        },
+      ],
+      twoTableSchemas,
+    );
+    expect(out).toContain(
+      `export { latest as eventsLatest } from './queries/sampledb/events/latest';`,
+    );
+    expect(out).toContain(
+      `export { latest as usersLatest } from './queries/sampledb/users/latest';`,
+    );
   });
 });
