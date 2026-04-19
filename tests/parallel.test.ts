@@ -21,7 +21,7 @@ function makeClient(overrides: Partial<ConstructorParameters<typeof AathenaClien
   });
 }
 
-describe('parallel — basic behaviour', () => {
+describe('parallel - basic behaviour', () => {
   it('runs all thunks and preserves tuple order + types', async () => {
     const [a, b, c] = await parallel(
       [
@@ -71,7 +71,7 @@ describe('parallel — basic behaviour', () => {
   });
 });
 
-describe('parallel — concurrency cap', () => {
+describe('parallel - concurrency cap', () => {
   it('never exceeds the configured limit', async () => {
     let inFlight = 0;
     let peak = 0;
@@ -107,7 +107,7 @@ describe('parallel — concurrency cap', () => {
   });
 });
 
-describe("parallel — concurrency: 'auto'", () => {
+describe("parallel - concurrency: 'auto'", () => {
   beforeEach(() => {
     limits._clearQuotaCache();
     fetchLiveQuotaMock.mockReset();

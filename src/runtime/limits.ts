@@ -2,8 +2,8 @@
  * Athena concurrent query quotas.
  *
  * Athena enforces two service quotas, per-account per-region:
- *   - Active DML queries (L-D405C694) — SELECT, CTAS, INSERT INTO
- *   - Active DDL queries (L-FCDFE414) — CREATE TABLE, ALTER TABLE ADD PARTITION
+ *   - Active DML queries (L-D405C694) - SELECT, CTAS, INSERT INTO
+ *   - Active DDL queries (L-FCDFE414) - CREATE TABLE, ALTER TABLE ADD PARTITION
  *
  * Both are adjustable in the Service Quotas console. Defaults vary by region.
  * Values here reflect the AWS-documented defaults as of 2026-04-19, sourced
@@ -37,7 +37,7 @@ const DDL_DEFAULT = 20;
 
 /**
  * AWS-documented default quota for this region and kind. Returns the value
- * AWS publishes for fresh accounts — not the account's current quota.
+ * AWS publishes for fresh accounts - not the account's current quota.
  */
 export function getDocumentedDefault(region: string, kind: QuotaKind): number {
   if (kind === 'ddl') return DDL_DEFAULT;
@@ -73,7 +73,7 @@ export function _clearQuotaCache(): void {
 /**
  * Fetch the live service quota for this account+region via Service Quotas.
  *
- * The @aws-sdk/client-service-quotas dependency is optional — if not
+ * The @aws-sdk/client-service-quotas dependency is optional - if not
  * installed, the fetch fails fast and the caller falls back to
  * getConservativeFallback. Loaded via dynamic import so bundles that never
  * call this don't pay for it.
