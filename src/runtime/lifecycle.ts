@@ -3,7 +3,9 @@ import {
   StartQueryExecutionCommand,
   GetQueryExecutionCommand,
   GetQueryResultsCommand,
+  GetQueryRuntimeStatisticsCommand,
   type ResultSet,
+  type QueryExecutionStatistics,
 } from '@aws-sdk/client-athena';
 import {
   AathenaError,
@@ -11,7 +13,7 @@ import {
   QueryFailedError,
   QueryCancelledError,
 } from './errors';
-import type { ColumnMeta } from './types';
+import type { ColumnMeta, QueryStatistics, QueryRuntimeRows } from './types';
 
 const DEFAULT_TIMEOUT = 300_000; // 5 minutes
 const DEFAULT_POLL_INTERVAL = 500;
@@ -21,14 +23,14 @@ interface LifecycleOptions {
   timeout?: number;
   pollingInterval?: number;
   maxPollingInterval?: number;
+  includeRuntimeStats?: boolean;
 }
 
 export interface QueryOutput {
   queryExecutionId: string;
   columns: ColumnMeta[];
   rows: (string | undefined)[][];
-  dataScannedInBytes: number;
-  engineExecutionTimeInMillis: number;
+  statistics: QueryStatistics;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -76,12 +78,14 @@ export async function executeQuery(
     const state = status.QueryExecution?.Status?.State;
 
     if (state === 'SUCCEEDED') {
-      const stats = status.QueryExecution?.Statistics;
+      const statistics = buildStatistics(status.QueryExecution?.Statistics);
+      if (options.includeRuntimeStats) {
+        statistics.runtime = await fetchRuntimeRows(client, queryExecutionId);
+      }
       return {
         queryExecutionId,
         ...(await collectResults(client, queryExecutionId)),
-        dataScannedInBytes: stats?.DataScannedInBytes ?? 0,
-        engineExecutionTimeInMillis: stats?.EngineExecutionTimeInMillis ?? 0,
+        statistics,
       };
     }
 
@@ -101,6 +105,40 @@ export async function executeQuery(
   }
 
   throw new QueryTimeoutError(queryExecutionId, timeout);
+}
+
+function buildStatistics(stats: QueryExecutionStatistics | undefined): QueryStatistics {
+  const out: QueryStatistics = {
+    engineExecutionTimeInMillis: stats?.EngineExecutionTimeInMillis ?? 0,
+    totalExecutionTimeInMillis: stats?.TotalExecutionTimeInMillis ?? 0,
+    queryQueueTimeInMillis: stats?.QueryQueueTimeInMillis ?? 0,
+    queryPlanningTimeInMillis: stats?.QueryPlanningTimeInMillis ?? 0,
+    servicePreProcessingTimeInMillis: stats?.ServicePreProcessingTimeInMillis ?? 0,
+    serviceProcessingTimeInMillis: stats?.ServiceProcessingTimeInMillis ?? 0,
+    dataScannedInBytes: stats?.DataScannedInBytes ?? 0,
+  };
+  if (stats?.DpuCount !== undefined) out.dpuCount = stats.DpuCount;
+  if (stats?.ResultReuseInformation?.ReusedPreviousResult !== undefined) {
+    out.resultReused = stats.ResultReuseInformation.ReusedPreviousResult;
+  }
+  return out;
+}
+
+async function fetchRuntimeRows(
+  client: AthenaClient,
+  queryExecutionId: string,
+): Promise<QueryRuntimeRows | undefined> {
+  const result = await client.send(
+    new GetQueryRuntimeStatisticsCommand({ QueryExecutionId: queryExecutionId }),
+  );
+  const rows = result.QueryRuntimeStatistics?.Rows;
+  if (!rows) return undefined;
+  const out: QueryRuntimeRows = {};
+  if (rows.InputRows !== undefined) out.inputRows = rows.InputRows;
+  if (rows.InputBytes !== undefined) out.inputBytes = rows.InputBytes;
+  if (rows.OutputRows !== undefined) out.outputRows = rows.OutputRows;
+  if (rows.OutputBytes !== undefined) out.outputBytes = rows.OutputBytes;
+  return out;
 }
 
 async function collectResults(

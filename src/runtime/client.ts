@@ -2,7 +2,7 @@ import { AthenaClient as AwsAthenaClient } from '@aws-sdk/client-athena';
 import { executeQuery } from './lifecycle';
 import { parseRow } from './parser';
 import { loadConfig } from './config';
-import type { AathenaConfig, QueryResult } from './types';
+import type { AathenaConfig, QueryOptions, QueryResult } from './types';
 
 export class AathenaClient {
   private readonly athena: AwsAthenaClient;
@@ -15,14 +15,14 @@ export class AathenaClient {
     });
   }
 
-  async query<T>(sql: string): Promise<QueryResult<T>> {
+  async query<T>(sql: string, options: QueryOptions = {}): Promise<QueryResult<T>> {
     const output = await executeQuery(
       this.athena,
       sql,
       this.config.database,
       this.config.workgroup,
       this.config.outputLocation,
-      this.config.query,
+      { ...this.config.query, includeRuntimeStats: options.includeRuntimeStats },
     );
 
     const rows = output.rows.map((row) =>
@@ -32,10 +32,7 @@ export class AathenaClient {
     return {
       rows,
       queryExecutionId: output.queryExecutionId,
-      statistics: {
-        dataScannedInBytes: output.dataScannedInBytes,
-        engineExecutionTimeInMillis: output.engineExecutionTimeInMillis,
-      },
+      statistics: output.statistics,
     };
   }
 }
