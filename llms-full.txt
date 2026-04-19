@@ -67,6 +67,11 @@ examples/
     aathena.config.json
 src/
   cli/
+    commands/
+      add.ts
+      init.ts
+    args.ts
+    aws-discovery.ts
     index.ts
   codegen/
     generate.ts
@@ -89,8 +94,12 @@ src/
     types.ts
   index.ts
 tests/
+  add-helpers.test.ts
+  cli-args.test.ts
   codegen.test.ts
   config.test.ts
+  database-override.test.ts
+  init-helpers.test.ts
   limits.test.ts
   parallel.test.ts
   parser.test.ts
@@ -463,20 +472,665 @@ for (const row of result.rows) {
 }
 ````
 
+## File: src/cli/commands/add.ts
+````typescript
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import * as p from '@clack/prompts';
+import type { AathenaConfig } from '../../runtime/types';
+import { fetchTableSchema, type GlueColumn } from '../../codegen/glue-fetcher';
+import { generate } from '../../codegen/generate';
+import { resolveRegion } from '../aws-discovery';
+
+export interface AddFlags {
+  name?: string;
+  fromSchema?: boolean;
+  noGenerate?: boolean;
+  force?: boolean;
+}
+
+const CONFIG_FILE = 'aathena.config.json';
+
+export async function runAdd(
+  cwd: string,
+  target: string | undefined,
+  flags: AddFlags,
+): Promise<number> {
+  const configPath = resolve(cwd, CONFIG_FILE);
+  if (!existsSync(configPath)) {
+    p.log.error(
+      `No ${CONFIG_FILE} found at ${cwd}. Run 'aathena init' first.`,
+    );
+    return 1;
+  }
+  if (!target) {
+    p.log.error('Usage: aathena add <table> [--name <query-name>] [--from-schema]');
+    return 1;
+  }
+
+  const config = JSON.parse(readFileSync(configPath, 'utf-8')) as AathenaConfig;
+  const parsed = parseTarget(target, config.database);
+  if (!parsed) {
+    p.log.error(`Invalid target '${target}'. Use 'table' or 'database.table'.`);
+    return 1;
+  }
+
+  p.intro('aathena add');
+
+  const { database, tableName } = parsed;
+  if (database !== config.database) {
+    const resolution = await p.select({
+      message: `'${database}' differs from config.database '${config.database}'. What should we do?`,
+      initialValue: 'bind' as const,
+      options: [
+        {
+          value: 'bind',
+          label: 'Scaffold under this database with per-query binding',
+          hint: `tables/${database}/${tableName}/, runtime uses ${database}`,
+        },
+        {
+          value: 'switch',
+          label: `Switch config.database to '${database}'`,
+          hint: 'Updates aathena.config.json',
+        },
+        { value: 'cancel', label: 'Cancel' },
+      ],
+    });
+    if (p.isCancel(resolution) || resolution === 'cancel') {
+      p.cancel('Cancelled.');
+      return 1;
+    }
+    if (resolution === 'switch') {
+      config.database = database;
+      writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+      p.log.success(`Switched config.database to '${database}'`);
+    }
+    // 'bind' needs no config change; codegen emits { database } automatically
+    // because directory database differs from config.database.
+  }
+
+  const queryName = flags.name ?? 'default';
+  const sqlPath = `tables/${database}/${tableName}/${queryName}.sql`;
+  const absPath = resolve(cwd, sqlPath);
+
+  if (existsSync(absPath) && !flags.force) {
+    p.log.error(`${sqlPath} already exists. Use --force or --name <other>.`);
+    return 1;
+  }
+
+  let columns: GlueColumn[] | undefined;
+  if (flags.fromSchema) {
+    const spin = p.spinner();
+    spin.start(`Fetching ${database}.${tableName} schema from Glue`);
+    try {
+      const schema = await fetchTableSchema(
+        resolveRegion(config.region),
+        database,
+        tableName,
+      );
+      columns = schema.columns;
+      spin.stop(`Fetched ${columns.length} column(s)`);
+    } catch (err) {
+      spin.stop('Could not fetch schema');
+      p.log.warn(formatAwsError(err));
+    }
+  }
+
+  const contents = buildQuerySql(tableName, columns);
+  mkdirSync(dirname(absPath), { recursive: true });
+  writeFileSync(absPath, contents, 'utf-8');
+  p.log.success(`Wrote ${sqlPath}`);
+
+  if (flags.noGenerate) {
+    p.outro(`Next: run 'npx aathena generate' to produce the query function.`);
+    return 0;
+  }
+
+  const spin = p.spinner();
+  spin.start('Running generate');
+  try {
+    const result = await generate(config, cwd);
+    spin.stop(
+      `Generated ${result.typesGenerated} type(s), ${result.queriesGenerated} query file(s)`,
+    );
+  } catch (err) {
+    spin.stop('Generate failed');
+    p.log.error(formatAwsError(err));
+    p.outro('Fix the errors above and re-run generate manually.');
+    return 1;
+  }
+
+  p.outro('Done. Edit the SQL file, tweak {{params}}, and re-run generate as you iterate.');
+  return 0;
+}
+
+export interface ParsedTarget {
+  database: string;
+  tableName: string;
+}
+
+/**
+ * Parse `table` or `database.table`. Falls back to the config database
+ * when only a table is supplied.
+ */
+export function parseTarget(
+  input: string,
+  fallbackDatabase: string,
+): ParsedTarget | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (!/^[A-Za-z_][\w.]*$/.test(trimmed)) return null;
+
+  const parts = trimmed.split('.');
+  if (parts.length === 1) {
+    return { database: fallbackDatabase, tableName: parts[0] };
+  }
+  if (parts.length === 2) {
+    const [database, tableName] = parts;
+    if (!database || !tableName) return null;
+    return { database, tableName };
+  }
+  return null;
+}
+
+/**
+ * Build a starter SQL file. When columns are provided, they're listed as a
+ * comment block so the author can see the shape before writing their query.
+ */
+export function buildQuerySql(tableName: string, columns?: GlueColumn[]): string {
+  const parts: string[] = [];
+  parts.push(`-- Generated by 'aathena add'. Edit freely.`);
+  parts.push(`-- Placeholders use {{name}}; annotate types with '-- @param name type'.`);
+  if (columns && columns.length > 0) {
+    parts.push(`--`);
+    parts.push(`-- Columns:`);
+    const nameWidth = Math.max(...columns.map((c) => c.name.length));
+    for (const col of columns) {
+      parts.push(`--   ${col.name.padEnd(nameWidth)}  ${col.type}`);
+    }
+  }
+  parts.push(``);
+  parts.push(`SELECT *`);
+  parts.push(`FROM ${tableName}`);
+  parts.push(`LIMIT 10`);
+  parts.push(``);
+  return parts.join('\n');
+}
+
+function formatAwsError(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  return String(err);
+}
+````
+
+## File: src/cli/commands/init.ts
+````typescript
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import * as p from '@clack/prompts';
+import type { AathenaConfig } from '../../runtime/types';
+import {
+  listDatabases,
+  listTables,
+  listWorkGroups,
+  getWorkGroupDetails,
+  resolveRegion,
+} from '../aws-discovery';
+
+export interface InitFlags {
+  force?: boolean;
+  region?: string;
+  database?: string;
+  workgroup?: string;
+  outputLocation?: string;
+  noSample?: boolean;
+}
+
+const CONFIG_FILE = 'aathena.config.json';
+
+export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
+  const configPath = resolve(cwd, CONFIG_FILE);
+
+  if (existsSync(configPath) && !flags.force) {
+    p.log.error(
+      `${CONFIG_FILE} already exists at ${cwd}. Use --force to overwrite.`,
+    );
+    return 1;
+  }
+
+  p.intro('aathena init');
+
+  const region = resolveRegion(flags.region);
+  let effectiveRegion = region;
+  if (!effectiveRegion) {
+    const answer = await p.text({
+      message: 'AWS region?',
+      placeholder: 'us-east-1',
+      validate: (v) => (v ? undefined : 'Region is required'),
+    });
+    if (p.isCancel(answer)) {
+      p.cancel('Cancelled.');
+      return 1;
+    }
+    effectiveRegion = answer;
+  }
+
+  // Database
+  let database: string;
+  if (flags.database) {
+    database = flags.database;
+  } else {
+    const spin = p.spinner();
+    spin.start('Listing Glue databases');
+    let dbs: Awaited<ReturnType<typeof listDatabases>> = [];
+    try {
+      dbs = await listDatabases(effectiveRegion);
+      spin.stop(`Found ${dbs.length} database(s)`);
+    } catch (err) {
+      spin.stop('Could not list Glue databases');
+      p.log.warn(formatAwsError(err));
+    }
+
+    if (dbs.length > 0) {
+      const choice = await p.select({
+        message: 'Select primary database',
+        options: dbs.map((d) => ({
+          value: d.name,
+          label: d.name,
+          hint: d.description,
+        })),
+      });
+      if (p.isCancel(choice)) {
+        p.cancel('Cancelled.');
+        return 1;
+      }
+      database = choice;
+    } else {
+      const typed = await p.text({
+        message: 'Database name',
+        placeholder: 'sampledb',
+        validate: (v) => (v ? undefined : 'Database is required'),
+      });
+      if (p.isCancel(typed)) {
+        p.cancel('Cancelled.');
+        return 1;
+      }
+      database = typed;
+    }
+  }
+
+  // Workgroup
+  let workgroup: string;
+  if (flags.workgroup) {
+    workgroup = flags.workgroup;
+  } else {
+    const spin = p.spinner();
+    spin.start('Listing Athena workgroups');
+    let wgs: Awaited<ReturnType<typeof listWorkGroups>> = [];
+    try {
+      wgs = await listWorkGroups(effectiveRegion);
+      spin.stop(`Found ${wgs.length} workgroup(s)`);
+    } catch (err) {
+      spin.stop('Could not list workgroups');
+      p.log.warn(formatAwsError(err));
+    }
+
+    if (wgs.length > 0) {
+      const choice = await p.select({
+        message: 'Select workgroup',
+        initialValue: wgs.find((w) => w.name === 'primary')?.name ?? wgs[0].name,
+        options: wgs.map((w) => ({
+          value: w.name,
+          label: w.name,
+          hint: w.state,
+        })),
+      });
+      if (p.isCancel(choice)) {
+        p.cancel('Cancelled.');
+        return 1;
+      }
+      workgroup = choice;
+    } else {
+      workgroup = 'primary';
+    }
+  }
+
+  // Output location
+  let outputLocation: string | undefined = flags.outputLocation;
+  if (!outputLocation) {
+    try {
+      const wg = await getWorkGroupDetails(effectiveRegion, workgroup);
+      if (wg.outputLocation) {
+        outputLocation = wg.outputLocation;
+        p.log.info(`outputLocation inherited from workgroup: ${wg.outputLocation}`);
+      }
+    } catch {
+      // ignore - ask below
+    }
+    if (!outputLocation) {
+      const typed = await p.text({
+        message: 'S3 output location (leave empty if workgroup has a default)',
+        placeholder: 's3://my-bucket/athena-results/',
+      });
+      if (p.isCancel(typed)) {
+        p.cancel('Cancelled.');
+        return 1;
+      }
+      outputLocation = typed || undefined;
+    }
+  }
+
+  // Build and write config
+  const config = buildConfig({
+    region: effectiveRegion,
+    database,
+    workgroup,
+    outputLocation,
+  });
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  p.log.success(`Wrote ${CONFIG_FILE}`);
+
+  // .gitignore
+  const gitignorePath = resolve(cwd, '.gitignore');
+  const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf-8') : '';
+  const merged = mergeGitignore(existing);
+  if (merged !== existing) {
+    writeFileSync(gitignorePath, merged, 'utf-8');
+    p.log.success('Updated .gitignore');
+  }
+
+  // Sample SQL
+  if (!flags.noSample) {
+    let sampleTable: string | undefined;
+    try {
+      const tables = await listTables(effectiveRegion, database);
+      sampleTable = tables[0]?.name;
+    } catch {
+      // fine, use placeholder
+    }
+    const { path: sqlPath, contents } = buildSampleSql(database, sampleTable);
+    const absPath = resolve(cwd, sqlPath);
+    mkdirSync(dirname(absPath), { recursive: true });
+    if (!existsSync(absPath)) {
+      writeFileSync(absPath, contents, 'utf-8');
+      p.log.success(`Wrote ${sqlPath}`);
+    }
+  }
+
+  p.outro(
+    `Next: run 'npx aathena generate' to produce typed query functions.`,
+  );
+  return 0;
+}
+
+export interface BuildConfigInput {
+  region?: string;
+  database: string;
+  workgroup?: string;
+  outputLocation?: string;
+}
+
+export function buildConfig(input: BuildConfigInput): AathenaConfig {
+  const out: AathenaConfig = { database: input.database };
+  if (input.region) out.region = input.region;
+  if (input.workgroup) out.workgroup = input.workgroup;
+  if (input.outputLocation) out.outputLocation = input.outputLocation;
+  return out;
+}
+
+export function mergeGitignore(existing: string): string {
+  const entries = new Set(existing.split('\n').map((l) => l.trim()).filter(Boolean));
+  const toAdd = ['generated/', 'node_modules/'].filter((e) => !entries.has(e));
+  if (toAdd.length === 0) return existing;
+
+  const base = existing.trimEnd();
+  const prefix = base ? base + '\n\n' : '';
+  return prefix + '# aathena\n' + toAdd.join('\n') + '\n';
+}
+
+export interface SampleSqlFile {
+  path: string;
+  contents: string;
+}
+
+export function buildSampleSql(database: string, tableName?: string): SampleSqlFile {
+  const table = tableName ?? 'example_table';
+  const path = `tables/${database}/${table}/example.sql`;
+  const contents =
+    `-- Sample aathena query. Edit or delete as needed.\n` +
+    `-- Placeholders use {{name}} syntax; annotate types with '-- @param name type' on their own line.\n` +
+    `\n` +
+    `SELECT *\n` +
+    `FROM ${table}\n` +
+    `LIMIT 10\n`;
+  return { path, contents };
+}
+
+function formatAwsError(err: unknown): string {
+  if (err instanceof Error) {
+    return `${err.name}: ${err.message}`;
+  }
+  return String(err);
+}
+````
+
+## File: src/cli/args.ts
+````typescript
+/**
+ * Minimal CLI flag parser. Supports:
+ *   --flag            -> true
+ *   --no-flag         -> false
+ *   --key value       -> "value"
+ *   --key=value       -> "value"
+ * Positional arguments are returned as `positional`.
+ *
+ * Kept tiny on purpose; we don't want yargs as a dependency for a handful
+ * of flags.
+ */
+
+export interface ParsedArgs {
+  positional: string[];
+  flags: Record<string, string | boolean>;
+}
+
+export function parseArgs(argv: string[]): ParsedArgs {
+  const positional: string[] = [];
+  const flags: Record<string, string | boolean> = {};
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!arg.startsWith('--')) {
+      positional.push(arg);
+      continue;
+    }
+
+    const rest = arg.slice(2);
+    const eqIdx = rest.indexOf('=');
+
+    if (eqIdx !== -1) {
+      flags[rest.slice(0, eqIdx)] = rest.slice(eqIdx + 1);
+      continue;
+    }
+
+    if (rest.startsWith('no-')) {
+      flags[rest.slice(3)] = false;
+      continue;
+    }
+
+    const next = argv[i + 1];
+    if (next !== undefined && !next.startsWith('--')) {
+      flags[rest] = next;
+      i++;
+    } else {
+      flags[rest] = true;
+    }
+  }
+
+  return { positional, flags };
+}
+
+export function flagString(flags: Record<string, string | boolean>, key: string): string | undefined {
+  const v = flags[key];
+  return typeof v === 'string' ? v : undefined;
+}
+
+export function flagBool(flags: Record<string, string | boolean>, key: string): boolean | undefined {
+  const v = flags[key];
+  return typeof v === 'boolean' ? v : undefined;
+}
+````
+
+## File: src/cli/aws-discovery.ts
+````typescript
+/**
+ * Thin wrappers around Glue and Athena discovery APIs used by `aathena init`
+ * and `aathena add`. Kept free of prompt/CLI concerns so they're easy to test
+ * and reuse.
+ */
+import {
+  GlueClient,
+  GetDatabasesCommand,
+  GetTablesCommand,
+} from '@aws-sdk/client-glue';
+import {
+  AthenaClient,
+  ListWorkGroupsCommand,
+  GetWorkGroupCommand,
+} from '@aws-sdk/client-athena';
+
+export interface DatabaseInfo {
+  name: string;
+  description?: string;
+}
+
+export interface TableInfo {
+  name: string;
+}
+
+export interface WorkGroupInfo {
+  name: string;
+  state?: string;
+  description?: string;
+}
+
+export interface WorkGroupDetails {
+  name: string;
+  outputLocation?: string;
+  enforceWorkGroupConfiguration?: boolean;
+}
+
+export async function listDatabases(region: string | undefined): Promise<DatabaseInfo[]> {
+  const glue = new GlueClient({ region });
+  const out: DatabaseInfo[] = [];
+  let nextToken: string | undefined;
+
+  do {
+    const res = await glue.send(new GetDatabasesCommand({ NextToken: nextToken }));
+    for (const d of res.DatabaseList ?? []) {
+      if (d.Name) out.push({ name: d.Name, description: d.Description });
+    }
+    nextToken = res.NextToken;
+  } while (nextToken);
+
+  return out;
+}
+
+export async function listTables(
+  region: string | undefined,
+  database: string,
+): Promise<TableInfo[]> {
+  const glue = new GlueClient({ region });
+  const out: TableInfo[] = [];
+  let nextToken: string | undefined;
+
+  do {
+    const res = await glue.send(
+      new GetTablesCommand({ DatabaseName: database, NextToken: nextToken }),
+    );
+    for (const t of res.TableList ?? []) {
+      if (t.Name) out.push({ name: t.Name });
+    }
+    nextToken = res.NextToken;
+  } while (nextToken);
+
+  return out;
+}
+
+export async function listWorkGroups(region: string | undefined): Promise<WorkGroupInfo[]> {
+  const athena = new AthenaClient({ region });
+  const out: WorkGroupInfo[] = [];
+  let nextToken: string | undefined;
+
+  do {
+    const res = await athena.send(new ListWorkGroupsCommand({ NextToken: nextToken }));
+    for (const w of res.WorkGroups ?? []) {
+      if (w.Name) {
+        out.push({ name: w.Name, state: w.State, description: w.Description });
+      }
+    }
+    nextToken = res.NextToken;
+  } while (nextToken);
+
+  return out;
+}
+
+export async function getWorkGroupDetails(
+  region: string | undefined,
+  name: string,
+): Promise<WorkGroupDetails> {
+  const athena = new AthenaClient({ region });
+  const res = await athena.send(new GetWorkGroupCommand({ WorkGroup: name }));
+  const wg = res.WorkGroup;
+  return {
+    name,
+    outputLocation: wg?.Configuration?.ResultConfiguration?.OutputLocation,
+    enforceWorkGroupConfiguration: wg?.Configuration?.EnforceWorkGroupConfiguration,
+  };
+}
+
+export function resolveRegion(cliRegion?: string): string | undefined {
+  return (
+    cliRegion ||
+    process.env.AWS_REGION ||
+    process.env.AWS_DEFAULT_REGION ||
+    undefined
+  );
+}
+````
+
 ## File: src/cli/index.ts
 ````typescript
 import { generate } from '../codegen/generate';
 import { findProjectRoot, loadConfig } from '../runtime/config';
+import { parseArgs, flagString, flagBool } from './args';
+import { runInit } from './commands/init';
+import { runAdd } from './commands/add';
 
 const HELP = `
 aathena - Type-safe AWS Athena client with codegen
 
 Usage:
-  aathena generate    Fetch table schemas and generate typed query functions
-  aathena help        Show this help message
+  aathena init [flags]                Interactive scaffold for a new project
+  aathena add <table> [flags]         Scaffold a new query (use 'db.table' for cross-database)
+  aathena generate                    Fetch table schemas and generate typed query functions
+  aathena help                        Show this help message
+
+Init flags:
+  --force                  Overwrite an existing aathena.config.json
+  --region <name>          Skip the region prompt
+  --database <name>        Skip the database prompt
+  --workgroup <name>       Skip the workgroup prompt
+  --output-location <s3>   Skip the output-location prompt
+  --no-sample              Do not write a sample SQL file
+
+Add flags:
+  --name <query-name>      Query filename (default: 'default')
+  --from-schema            Fetch Glue columns and include them as a comment block
+  --no-generate            Do not auto-run generate after scaffolding
+  --force                  Overwrite an existing SQL file
 
 Configuration:
-  Create aathena.config.json in your project root:
+  aathena looks for aathena.config.json in the project root:
 
   {
     "database": "sampledb",
@@ -488,12 +1142,37 @@ Configuration:
 `;
 
 async function main() {
-  const args = process.argv.slice(2);
-  const command = args[0];
+  const argv = process.argv.slice(2);
+  const { positional, flags } = parseArgs(argv);
+  const command = positional[0];
 
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     console.log(HELP);
     process.exit(0);
+  }
+
+  if (command === 'init') {
+    const cwd = process.cwd();
+    const code = await runInit(cwd, {
+      force: flagBool(flags, 'force'),
+      region: flagString(flags, 'region'),
+      database: flagString(flags, 'database'),
+      workgroup: flagString(flags, 'workgroup'),
+      outputLocation: flagString(flags, 'output-location'),
+      noSample: flagBool(flags, 'sample') === false,
+    });
+    process.exit(code);
+  }
+
+  if (command === 'add') {
+    const cwd = process.cwd();
+    const code = await runAdd(cwd, positional[1], {
+      name: flagString(flags, 'name'),
+      fromSchema: flagBool(flags, 'from-schema'),
+      noGenerate: flagBool(flags, 'generate') === false,
+      force: flagBool(flags, 'force'),
+    });
+    process.exit(code);
   }
 
   if (command === 'generate') {
@@ -618,6 +1297,7 @@ export async function generate(config: AathenaConfig, cwd: string): Promise<Gene
   // 5. Generate query files
   const queriesDir = resolve(outDir, 'queries');
   let queriesGenerated = 0;
+  const mismatchedDatabases = new Set<string>();
 
   for (const file of sqlFiles) {
     const sql = readFileSync(file.absolutePath, 'utf-8');
@@ -632,16 +1312,28 @@ export async function generate(config: AathenaConfig, cwd: string): Promise<Gene
       resolve(typesDir, file.database, `${file.tableName}.ts`),
     );
 
+    if (file.database !== config.database) {
+      mismatchedDatabases.add(file.database);
+    }
+
     const content = generateQueryFile({
       sqlRelativePath: file.relativePathFromRoot,
       tableName: file.tableName,
       database: file.database,
+      primaryDatabase: config.database,
       parsed,
       typesImportPath,
     });
 
     writeFileSync(queryFilePath, content, 'utf-8');
     queriesGenerated++;
+  }
+
+  if (mismatchedDatabases.size > 0) {
+    const list = [...mismatchedDatabases].sort().join(', ');
+    console.log(
+      `  i Bound per-query database for: ${list} (primary is '${config.database}').`,
+    );
   }
 
   // 6. Generate barrel index
@@ -829,6 +1521,12 @@ export interface QueryGenInput {
   tableName: string;
   /** Database name extracted from directory structure */
   database: string;
+  /**
+   * Project's primary database (AathenaConfig.database). When this differs
+   * from the directory's database, the emitted query binds its own database
+   * explicitly so runtime execution context routes correctly.
+   */
+  primaryDatabase: string;
   /** Parsed SQL with extracted params */
   parsed: ParsedSQL;
   /** Relative import path from generated query file to types file */
@@ -842,6 +1540,10 @@ export function generateQueryFile(input: QueryGenInput): string {
 
   const hasSchema = params.length > 0 && params.some((p) => p.schemaType);
   const runtimeImports = hasSchema ? 'createQuery, schema' : 'createQuery';
+  const needsDatabaseBinding = input.database !== input.primaryDatabase;
+  const databaseArg = needsDatabaseBinding
+    ? `  { database: '${input.database}' },`
+    : null;
 
   const lines: string[] = [
     HEADER,
@@ -875,12 +1577,17 @@ export function generateQueryFile(input: QueryGenInput): string {
       );
       lines.push(`  '${input.sqlRelativePath}',`);
       lines.push(`  schemaDef,`);
+      if (databaseArg) lines.push(databaseArg);
       lines.push(`);`);
     } else {
       lines.push(
         `export const ${queryFnName} = createQuery<${interfaceName}, ${paramsInterfaceName}>(`,
       );
       lines.push(`  '${input.sqlRelativePath}',`);
+      if (databaseArg) {
+        lines.push(`  undefined,`);
+        lines.push(databaseArg);
+      }
       lines.push(`);`);
     }
   } else {
@@ -890,6 +1597,10 @@ export function generateQueryFile(input: QueryGenInput): string {
       `export const ${queryFnName} = createQuery<${interfaceName}, Record<string, never>>(`,
     );
     lines.push(`  '${input.sqlRelativePath}',`);
+    if (databaseArg) {
+      lines.push(`  undefined,`);
+      lines.push(databaseArg);
+    }
     lines.push(`);`);
   }
 
@@ -1279,7 +1990,7 @@ export class AathenaClient {
     const output = await executeQuery(
       this.athena,
       sql,
-      this._config.database,
+      options.database ?? this._config.database,
       this._config.workgroup,
       this._config.outputLocation,
       { ...this._config.query, includeRuntimeStats: options.includeRuntimeStats },
@@ -1431,6 +2142,7 @@ export class ColumnParseError extends AathenaError {
 ````typescript
 export { AathenaClient, createClient } from './client';
 export { createQuery, schema } from './query';
+export type { CreateQueryOptions } from './query';
 export { defineConfig, findProjectRoot } from './config';
 export { parallel } from './parallel';
 export type { ParallelOptions } from './parallel';
@@ -2203,9 +2915,19 @@ type QueryFn<TResult, TParams> = (
   params: TParams,
 ) => Promise<QueryResult<TResult>>;
 
+export interface CreateQueryOptions {
+  /**
+   * Execution context database for this query. Takes precedence over
+   * AathenaConfig.database. Emitted by codegen when the query's directory
+   * database differs from the project's primary database.
+   */
+  database?: string;
+}
+
 export function createQuery<TResult, TParams = Record<string, never>>(
   sqlPath: string,
   schemaDef?: Record<string, { validate(val: unknown): boolean }>,
+  options: CreateQueryOptions = {},
 ): QueryFn<TResult, TParams> {
   // Defer project-root lookup and template load until the first call, so
   // importing a generated query doesn't trigger filesystem I/O at module
@@ -2222,7 +2944,7 @@ export function createQuery<TResult, TParams = Record<string, never>>(
       renderFn = built as RenderFn;
     }
     const { sql } = renderFn(params as never);
-    return client.query<TResult>(sql);
+    return client.query<TResult>(sql, options.database ? { database: options.database } : {});
   };
 }
 
@@ -2277,6 +2999,10 @@ export interface QueryStatistics {
 export interface QueryOptions {
   // Issue an extra GetQueryRuntimeStatistics call and surface input/output row counts.
   includeRuntimeStats?: boolean;
+  // Override the execution context database for this call. Takes precedence over
+  // AathenaConfig.database. Used by generated queries whose directory database
+  // differs from the project's primary database.
+  database?: string;
 }
 
 export interface QueryResult<T> {
@@ -2297,6 +3023,7 @@ export interface ColumnMeta {
 // Public API
 export { AathenaClient, createClient } from './runtime/client';
 export { createQuery, schema } from './runtime/query';
+export type { CreateQueryOptions } from './runtime/query';
 export { defineConfig } from './runtime/config';
 export { parallel } from './runtime/parallel';
 export type { ParallelOptions } from './runtime/parallel';
@@ -2317,6 +3044,131 @@ export {
   QueryCancelledError,
   ColumnParseError,
 } from './runtime/errors';
+````
+
+## File: tests/add-helpers.test.ts
+````typescript
+import { describe, it, expect } from 'vitest';
+import { parseTarget, buildQuerySql } from '../src/cli/commands/add';
+import type { GlueColumn } from '../src/codegen/glue-fetcher';
+
+describe('parseTarget', () => {
+  it('uses fallback database when only a table is given', () => {
+    expect(parseTarget('events', 'primary_db')).toEqual({
+      database: 'primary_db',
+      tableName: 'events',
+    });
+  });
+
+  it('parses database.table', () => {
+    expect(parseTarget('sales.events', 'primary_db')).toEqual({
+      database: 'sales',
+      tableName: 'events',
+    });
+  });
+
+  it('trims whitespace', () => {
+    expect(parseTarget('  events  ', 'x')).toEqual({
+      database: 'x',
+      tableName: 'events',
+    });
+  });
+
+  it('rejects empty input', () => {
+    expect(parseTarget('', 'x')).toBeNull();
+    expect(parseTarget('   ', 'x')).toBeNull();
+  });
+
+  it('rejects invalid characters', () => {
+    expect(parseTarget('has space', 'x')).toBeNull();
+    expect(parseTarget('has-dash', 'x')).toBeNull();
+    expect(parseTarget('1leadingDigit', 'x')).toBeNull();
+  });
+
+  it('rejects more than two dot-separated parts', () => {
+    expect(parseTarget('a.b.c', 'x')).toBeNull();
+  });
+
+  it('rejects empty database or table halves', () => {
+    expect(parseTarget('.events', 'x')).toBeNull();
+    expect(parseTarget('sales.', 'x')).toBeNull();
+  });
+});
+
+describe('buildQuerySql', () => {
+  it('writes a minimal starter query without columns', () => {
+    const sql = buildQuerySql('events');
+    expect(sql).toContain('FROM events');
+    expect(sql).toContain('LIMIT 10');
+    expect(sql).not.toContain('-- Columns:');
+  });
+
+  it('includes a padded column comment block when columns are provided', () => {
+    const cols: GlueColumn[] = [
+      { name: 'event_id', type: 'integer', nullable: false },
+      { name: 'event_name', type: 'varchar', nullable: true },
+      { name: 'created_at', type: 'timestamp', nullable: true },
+    ];
+    const sql = buildQuerySql('events', cols);
+    expect(sql).toContain('-- Columns:');
+    expect(sql).toContain('event_id    integer');
+    expect(sql).toContain('event_name  varchar');
+    expect(sql).toContain('created_at  timestamp');
+  });
+
+  it('skips the columns block when an empty array is passed', () => {
+    const sql = buildQuerySql('events', []);
+    expect(sql).not.toContain('-- Columns:');
+  });
+});
+````
+
+## File: tests/cli-args.test.ts
+````typescript
+import { describe, it, expect } from 'vitest';
+import { parseArgs, flagString, flagBool } from '../src/cli/args';
+
+describe('parseArgs', () => {
+  it('separates positional and flag args', () => {
+    const r = parseArgs(['init', '--region', 'us-east-1', '--force']);
+    expect(r.positional).toEqual(['init']);
+    expect(r.flags.region).toBe('us-east-1');
+    expect(r.flags.force).toBe(true);
+  });
+
+  it('supports --key=value form', () => {
+    const r = parseArgs(['--database=sales', '--region=us-west-2']);
+    expect(r.flags.database).toBe('sales');
+    expect(r.flags.region).toBe('us-west-2');
+  });
+
+  it('treats --no-foo as false', () => {
+    const r = parseArgs(['add', '--no-generate', '--no-sample']);
+    expect(r.flags.generate).toBe(false);
+    expect(r.flags.sample).toBe(false);
+  });
+
+  it('handles a bare --flag at the end', () => {
+    const r = parseArgs(['--force']);
+    expect(r.flags.force).toBe(true);
+  });
+
+  it('collects multiple positional args', () => {
+    const r = parseArgs(['add', 'sales.events', '--name', 'daily']);
+    expect(r.positional).toEqual(['add', 'sales.events']);
+    expect(r.flags.name).toBe('daily');
+  });
+});
+
+describe('flagString / flagBool', () => {
+  it('coerces safely when type mismatches', () => {
+    expect(flagString({ force: true }, 'force')).toBeUndefined();
+    expect(flagBool({ region: 'us-east-1' }, 'region')).toBeUndefined();
+    expect(flagString({ region: 'us-east-1' }, 'region')).toBe('us-east-1');
+    expect(flagBool({ force: true }, 'force')).toBe(true);
+    expect(flagBool({ sample: false }, 'sample')).toBe(false);
+  });
+});
 ````
 
 ## File: tests/codegen.test.ts
@@ -2365,6 +3217,7 @@ describe('generateQueryFile', () => {
       sqlRelativePath: 'tables/sampledb/events/product.sql',
       tableName: 'events',
       database: 'sampledb',
+      primaryDatabase: 'sampledb',
       parsed,
       typesImportPath: '../../types/sampledb/events',
     });
@@ -2376,6 +3229,7 @@ describe('generateQueryFile', () => {
     expect(output).toContain('limit: number;');
     expect(output).toContain('export const product = createQuery');
     expect(output).toContain('tables/sampledb/events/product.sql');
+    expect(output).not.toContain('database:');
   });
 
   it('generates query file with @param annotations and schema', () => {
@@ -2388,6 +3242,7 @@ SELECT * FROM events WHERE status = '{{status}}' LIMIT {{limit}}`;
       sqlRelativePath: 'tables/sampledb/events/product.sql',
       tableName: 'events',
       database: 'sampledb',
+      primaryDatabase: 'sampledb',
       parsed,
       typesImportPath: '../../types/sampledb/events',
     });
@@ -2406,12 +3261,67 @@ SELECT * FROM events WHERE status = '{{status}}' LIMIT {{limit}}`;
       sqlRelativePath: 'tables/sampledb/events/count.sql',
       tableName: 'events',
       database: 'sampledb',
+      primaryDatabase: 'sampledb',
       parsed,
       typesImportPath: '../../types/sampledb/events',
     });
 
     expect(output).toContain('Record<string, never>');
     expect(output).not.toContain('Params');
+  });
+
+  it('binds per-query database when directory differs from primary (no params)', () => {
+    const sql = `SELECT COUNT(*) as cnt FROM events`;
+    const parsed = parseSQL(sql);
+
+    const output = generateQueryFile({
+      sqlRelativePath: 'tables/sales/events/count.sql',
+      tableName: 'events',
+      database: 'sales',
+      primaryDatabase: 'marketing',
+      parsed,
+      typesImportPath: '../../types/sales/events',
+    });
+
+    expect(output).toContain(`{ database: 'sales' }`);
+    expect(output).toContain('undefined,');
+  });
+
+  it('binds per-query database when directory differs (with params, no schema)', () => {
+    const sql = `SELECT * FROM events WHERE status = '{{status}}' AND name = '{{name}}'`;
+    const parsed = parseSQL(sql);
+
+    const output = generateQueryFile({
+      sqlRelativePath: 'tables/sales/events/product.sql',
+      tableName: 'events',
+      database: 'sales',
+      primaryDatabase: 'marketing',
+      parsed,
+      typesImportPath: '../../types/sales/events',
+    });
+
+    expect(output).toContain(`{ database: 'sales' }`);
+    expect(output).toContain('undefined,');
+    expect(output).not.toContain('schemaDef');
+  });
+
+  it('binds per-query database with @param schema', () => {
+    const sql = `-- @param status enum('active','pending')
+SELECT * FROM events WHERE status = '{{status}}'`;
+    const parsed = parseSQL(sql);
+
+    const output = generateQueryFile({
+      sqlRelativePath: 'tables/sales/events/product.sql',
+      tableName: 'events',
+      database: 'sales',
+      primaryDatabase: 'marketing',
+      parsed,
+      typesImportPath: '../../types/sales/events',
+    });
+
+    expect(output).toContain('schemaDef');
+    expect(output).toContain(`{ database: 'sales' }`);
+    expect(output).not.toContain('undefined,');
   });
 });
 ````
@@ -2510,6 +3420,138 @@ describe('loadConfig', () => {
       process.cwd = original;
     }
     teardown();
+  });
+});
+````
+
+## File: tests/database-override.test.ts
+````typescript
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../src/runtime/lifecycle', () => ({
+  executeQuery: vi.fn(async () => ({
+    queryExecutionId: 'qid',
+    columns: [],
+    rows: [],
+    statistics: {
+      engineExecutionTimeInMillis: 0,
+      totalExecutionTimeInMillis: 0,
+      queryQueueTimeInMillis: 0,
+      queryPlanningTimeInMillis: 0,
+      servicePreProcessingTimeInMillis: 0,
+      serviceProcessingTimeInMillis: 0,
+      dataScannedInBytes: 0,
+    },
+  })),
+}));
+
+const { AathenaClient } = await import('../src/runtime/client');
+const lifecycle = await import('../src/runtime/lifecycle');
+const executeQueryMock = vi.mocked(lifecycle.executeQuery);
+
+describe('client.query database override', () => {
+  beforeEach(() => {
+    executeQueryMock.mockClear();
+  });
+
+  it('falls back to config.database when no option is given', async () => {
+    const client = new AathenaClient({ database: 'primary_db', region: 'us-east-1' });
+    await client.query('SELECT 1');
+    const call = executeQueryMock.mock.calls[0];
+    expect(call[2]).toBe('primary_db'); // database arg position
+  });
+
+  it('uses options.database when set', async () => {
+    const client = new AathenaClient({ database: 'primary_db', region: 'us-east-1' });
+    await client.query('SELECT 1', { database: 'other_db' });
+    const call = executeQueryMock.mock.calls[0];
+    expect(call[2]).toBe('other_db');
+  });
+
+  it('options.database does not mutate config', async () => {
+    const client = new AathenaClient({ database: 'primary_db', region: 'us-east-1' });
+    await client.query('SELECT 1', { database: 'other_db' });
+    await client.query('SELECT 2');
+    expect(executeQueryMock.mock.calls[0][2]).toBe('other_db');
+    expect(executeQueryMock.mock.calls[1][2]).toBe('primary_db');
+  });
+});
+````
+
+## File: tests/init-helpers.test.ts
+````typescript
+import { describe, it, expect } from 'vitest';
+import { buildConfig, mergeGitignore, buildSampleSql } from '../src/cli/commands/init';
+
+describe('buildConfig', () => {
+  it('includes only fields with values', () => {
+    expect(buildConfig({ database: 'x' })).toEqual({ database: 'x' });
+    expect(
+      buildConfig({
+        database: 'x',
+        region: 'us-east-1',
+        workgroup: 'primary',
+        outputLocation: 's3://b/o/',
+      }),
+    ).toEqual({
+      database: 'x',
+      region: 'us-east-1',
+      workgroup: 'primary',
+      outputLocation: 's3://b/o/',
+    });
+  });
+
+  it('drops empty strings and undefined fields', () => {
+    const cfg = buildConfig({
+      database: 'x',
+      region: undefined,
+      workgroup: undefined,
+      outputLocation: undefined,
+    });
+    expect(cfg).toEqual({ database: 'x' });
+  });
+});
+
+describe('mergeGitignore', () => {
+  it('adds generated/ and node_modules/ when missing', () => {
+    const out = mergeGitignore('');
+    expect(out).toContain('generated/');
+    expect(out).toContain('node_modules/');
+    expect(out).toContain('# aathena');
+  });
+
+  it('skips already-present entries', () => {
+    const src = 'node_modules/\ndist/\n';
+    const out = mergeGitignore(src);
+    expect(out.endsWith('generated/\n')).toBe(true);
+    const occurrences = out.match(/node_modules\//g) ?? [];
+    expect(occurrences.length).toBe(1);
+  });
+
+  it('returns input unchanged when everything is already present', () => {
+    const src = 'node_modules/\ngenerated/\n';
+    expect(mergeGitignore(src)).toBe(src);
+  });
+
+  it('does not duplicate on repeated invocations', () => {
+    const first = mergeGitignore('');
+    const second = mergeGitignore(first);
+    expect(first).toBe(second);
+  });
+});
+
+describe('buildSampleSql', () => {
+  it('uses the provided table name in path and SQL', () => {
+    const file = buildSampleSql('sampledb', 'events');
+    expect(file.path).toBe('tables/sampledb/events/example.sql');
+    expect(file.contents).toContain('FROM events');
+    expect(file.contents).toContain('LIMIT 10');
+  });
+
+  it('falls back to example_table when no table is provided', () => {
+    const file = buildSampleSql('sampledb');
+    expect(file.path).toBe('tables/sampledb/example_table/example.sql');
+    expect(file.contents).toContain('FROM example_table');
   });
 });
 ````
@@ -3246,65 +4288,55 @@ SOFTWARE.
 
 aathena generates fully typed query functions from SQL files and AWS Glue table schemas. Write SQL with `{{variable}}` placeholders, run codegen, get type-safe functions with validated parameters and parsed results.
 
-## Install
+## 60-second onboarding
 
 ```bash
 npm install aathena
+npx aathena init                        # interactive scaffold: region, database, workgroup, output location
+npx aathena add events --from-schema    # scaffold tables/<db>/events/default.sql + auto-generate
 ```
 
-## Workflow
-
-### 1. Config
-
-```json
-{
-  "database": "sampledb",
-  "workgroup": "primary",
-  "outputLocation": "s3://my-bucket/athena-results/"
-}
-```
-
-### 2. Write SQL
-
-Create files under `tables/{database}/{table}/{query}.sql`:
-
-```sql
--- @param status enum('active','pending','done')
--- @param limit positiveInt
-SELECT event_id, event_name, price, created_at
-FROM events
-WHERE status = '{{status}}'
-LIMIT {{limit}}
-```
-
-### 3. Generate
-
-```bash
-npx aathena generate
-```
-
-Produces typed query functions and interfaces from Glue schemas:
-
-```
-generated/
-├── types/sampledb/events.ts      # interface Events { event_id: number; ... }
-├── queries/sampledb/events/product.ts  # export const product = createQuery<Events, ProductParams>(...)
-└── index.ts                      # barrel exports
-```
-
-### 4. Use
+Then:
 
 ```typescript
 import { createClient } from 'aathena';
-import { product } from './generated';
+import { defaultQuery as events } from './generated';
 
-const athena = createClient();  // reads from aathena.config.json
-
-const result = await product(athena, { status: 'active', limit: 99 });
-result.rows[0].event_id   // number
-result.rows[0].price      // string (decimal, precision safe)
-result.rows[0].created_at // Date
+const athena = createClient();
+const result = await events(athena, {});
+result.rows[0].event_id;  // typed from Glue
 ```
+
+## CLI commands
+
+### init
+
+```
+aathena init [flags]
+```
+
+Interactive scaffold. Reads AWS credentials, lists Glue databases + Athena workgroups, inherits workgroup output location when possible, writes `aathena.config.json`, updates `.gitignore` (adds `generated/` and `node_modules/`), and writes a starter SQL file.
+
+Flags: `--force` (overwrite existing config), `--region`, `--database`, `--workgroup`, `--output-location`, `--no-sample`.
+
+### add
+
+```
+aathena add <table> [flags]
+aathena add <database>.<table> [flags]
+```
+
+Scaffold a SQL file under `tables/{database}/{table}/{name}.sql`. When `database.table` is given and database differs from `config.database`, prompts: (1) scaffold with per-query database binding, (2) switch `config.database`, (3) cancel. Auto-runs `generate` unless `--no-generate`.
+
+Flags: `--name <query-name>` (default `default`), `--from-schema` (embed Glue columns as a comment block), `--force` (overwrite), `--no-generate`.
+
+### generate
+
+```
+aathena generate
+```
+
+Walks `tables/`, discovers SQL files, fetches schemas from Glue in parallel, produces `generated/types/` and `generated/queries/` plus a barrel `index.ts`. Surfaces a one-line info when query directory database differs from `config.database` and per-query binding is emitted.
 
 ## API
 
@@ -3312,7 +4344,7 @@ result.rows[0].created_at // Date
 
 ```typescript
 createClient()         // reads from aathena.config.json automatically
-createClient(config)   // uses provided AathenaConfig
+createClient(config)   // uses the provided AathenaConfig
 ```
 
 Returns an `AathenaClient` that executes queries against Athena.
@@ -3325,12 +4357,38 @@ import { createQuery, schema } from 'aathena/runtime';
 const myQuery = createQuery<ResultType, ParamsType>(
   'tables/db/table/query.sql',
   { status: schema.enum('active', 'done'), limit: schema.positiveInt },
+  { database: 'db' },   // optional, overrides config.database for this query
 );
-
-const result = await myQuery(athena, { status: 'active', limit: 99 });
 ```
 
-Factory function that binds a SQL template to its types. Generated by codegen, but can be written manually.
+Factory that binds a SQL template to its types. Written by codegen; can be authored manually. The optional third arg `{ database }` is emitted automatically when the file's directory database differs from `config.database`.
+
+### parallel
+
+Runs multiple queries concurrently with a bounded cap that respects Athena's per-account, per-region service quotas on active DML/DDL queries. Tasks must be passed as thunks (`() => query(...)`), not pre-started promises, so the helper can gate when each query actually starts.
+
+```typescript
+import { parallel } from 'aathena';
+
+const [users, orders] = await parallel(
+  [
+    () => getUsers(client, {}),
+    () => getOrders(client, { from: '2026-01-01' }),
+  ],
+  { concurrency: 'auto', client },
+);
+```
+
+Options: `concurrency: number | 'auto'` (default `5`), `client` (required for `'auto'` unless `maxConcurrency` is set in config), `kind: 'dml' | 'ddl'` (default `'dml'`), `reserveHeadroom: number` (default `1`), `mode: 'all' | 'allSettled'` (default `'all'`).
+
+Concurrency resolution for `'auto'`:
+1. `AathenaConfig.maxConcurrency` if set
+2. Live AWS Service Quotas lookup (`L-D405C694` for DML, `L-FCDFE414` for DDL), requires `servicequotas:GetServiceQuota` IAM permission
+3. Region-aware conservative fallback (50% of AWS-documented default, clamped to `[5, 25]`)
+
+Returns a tuple typed by each thunk's return value. In `'allSettled'` mode, returns `PromiseSettledResult<T>` per task.
+
+`client.query()` separately retries `StartQueryExecution` on `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED` with exponential backoff + full jitter, up to 6 attempts.
 
 ### Parameter types
 
@@ -3338,7 +4396,7 @@ Parameters are inferred from SQL context or declared with `@param` annotations:
 
 **Inference rules:**
 - `'{{var}}'` (quoted) - string
-- `LIMIT {{var}}` / `OFFSET {{var}}` - number
+- `LIMIT {{var}}` / `OFFSET {{var}}` - number (positiveInt)
 - `>= {{var}}` (unquoted comparison) - number
 - default - string
 
@@ -3370,48 +4428,7 @@ Parameters are inferred from SQL context or declared with `@param` annotations:
 - `map<K, V>` - `Record<K, V>`
 - `struct<a:T, b:U>` - `{ a: T; b: U }`
 
-All complex types are recursive and parsed automatically at runtime. Athena returns every value as a flat string, aathena handles the conversion.
-
-### Complex types
-
-Athena's `array`, `map`, and `struct` types are fully supported in both codegen and runtime. This solves a common pain point: Athena returns complex types as flat strings even when the underlying data (Parquet/ORC) has native complex structures.
-
-```typescript
-// Glue schema: tags array<varchar>, attrs map<string,integer>, addr struct<city:string,zip:integer>
-row.tags          // string[]
-row.attrs         // Record<string, number>
-row.addr          // { city: string; zip: number }
-row.addr.city     // string, direct access just like the source data
-```
-
-No `CAST()`, no extra views, no manual `JSON.parse()` needed.
-
-### parallel
-
-Runs multiple queries concurrently with a bounded cap that respects Athena's per-account, per-region service quotas on active DML/DDL queries. Tasks must be passed as thunks (`() => query(...)`), not pre-started promises, so the helper can gate when each query actually starts.
-
-```typescript
-import { parallel } from 'aathena';
-
-const [users, orders] = await parallel(
-  [
-    () => getUsers(client, {}),
-    () => getOrders(client, { from: '2026-01-01' }),
-  ],
-  { concurrency: 'auto', client },
-);
-```
-
-Options: `concurrency: number | 'auto'` (default `5`), `client` (required for `'auto'` unless `maxConcurrency` is set in config), `kind: 'dml' | 'ddl'` (default `'dml'`), `reserveHeadroom: number` (default `1`), `mode: 'all' | 'allSettled'` (default `'all'`).
-
-Concurrency resolution for `'auto'`:
-1. `AathenaConfig.maxConcurrency` if set
-2. Live AWS Service Quotas lookup (`L-D405C694` for DML, `L-FCDFE414` for DDL), requires `servicequotas:GetServiceQuota` IAM permission
-3. Region-aware conservative fallback (50% of AWS-documented default, clamped to `[5, 25]`)
-
-Returns a tuple typed by each thunk's return value. In `'allSettled'` mode, returns `PromiseSettledResult<T>` per task.
-
-`client.query()` separately retries `StartQueryExecution` on `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED` with exponential backoff + full jitter, up to 6 attempts.
+All complex types are recursive and parsed automatically at runtime. Athena returns every value as a flat string at the SDK level; aathena handles the conversion.
 
 ### Query statistics
 
@@ -3425,6 +4442,12 @@ result.statistics.runtime?.outputRows;
 ```
 
 Fields: `engineExecutionTimeInMillis`, `totalExecutionTimeInMillis`, `queryQueueTimeInMillis`, `queryPlanningTimeInMillis`, `servicePreProcessingTimeInMillis`, `serviceProcessingTimeInMillis`, `dataScannedInBytes`, `dpuCount?`, `resultReused?`, `runtime?: { inputRows?, inputBytes?, outputRows?, outputBytes? }` (opt-in).
+
+### Cross-database queries
+
+When a SQL file lives under `tables/{directory-db}/...` and `directory-db !== config.database`, codegen emits the query with an explicit per-call database binding so it routes correctly at runtime. Users don't write this manually: `aathena add <db>.<table>` scaffolds under the correct directory and `generate` does the rest.
+
+Inline equivalent: `client.query(sql, { database: 'X' })` overrides `config.database` for a single call.
 
 ### Error classes
 
@@ -3443,7 +4466,7 @@ Fields: `engineExecutionTimeInMillis`, `totalExecutionTimeInMillis`, `queryQueue
 - `schema` - parameter validation descriptors (re-exported from sql-render)
 - `defineConfig` - config helper
 - `AathenaError`, `QueryTimeoutError`, `QueryFailedError`, `QueryCancelledError`, `ColumnParseError` - error classes
-- Types: `AathenaConfig`, `QueryResult`, `QueryStatistics`, `QueryRuntimeRows`, `QueryOptions`, `ColumnMeta`, `ParallelOptions`, `QuotaKind`
+- Types: `AathenaConfig`, `QueryResult`, `QueryStatistics`, `QueryRuntimeRows`, `QueryOptions`, `ColumnMeta`, `ParallelOptions`, `QuotaKind`, `CreateQueryOptions`
 
 ### Exports (aathena/runtime)
 
@@ -3451,14 +4474,15 @@ Same as above. Separate entry point used by generated code.
 
 ## Key details
 
-- Built on `@aws-sdk/client-athena`, `@aws-sdk/client-glue`, and `sql-render`
-- Query lifecycle: start query, poll with exponential backoff, paginate results, parse rows
+- Built on `@aws-sdk/client-athena`, `@aws-sdk/client-glue`, and `sql-render`; CLI uses `@clack/prompts`
+- Query lifecycle: start query (with retry on concurrent-limit throttling), poll with exponential backoff, paginate results, parse rows
 - Nullable columns: regular Glue columns are nullable (`T | null`), partition keys are NOT NULL
 - Codegen fetches schemas in parallel via `Promise.allSettled`, fails fast on Glue errors
 - SQL files use sql-render for template rendering with built-in injection protection
-- Directory convention: `tables/{database}/{table}/{query}.sql`, nested grouping supported
-- Config: `aathena.config.json` with `database`, `outputLocation` (required), `region`, `workgroup`, `tablesDir`, `outDir`, `query.timeout/pollingInterval/maxPollingInterval`, `maxConcurrency` (optional)
+- Directory convention: `tables/{database}/{table}/{query}.sql`, nested grouping supported; directory database drives both Glue schema lookup and runtime execution context
+- Config: `aathena.config.json` with `database` (required), `region`, `workgroup`, `outputLocation`, `tablesDir`, `outDir`, `query.timeout/pollingInterval/maxPollingInterval`, `maxConcurrency` (all optional)
 - `@aws-sdk/client-service-quotas` is an optional dependency used by `parallel({ concurrency: 'auto' })`; loaded via dynamic import so it costs nothing when unused
+- IAM: runtime needs Athena start/get/results + S3 read/write; init needs `glue:GetDatabases/GetTables`, `athena:ListWorkGroups/GetWorkGroup`; `parallel` auto mode optionally needs `servicequotas:GetServiceQuota`
 - Dual CJS/ESM build via tsup
 - Node.js >= 20 required
 ````
@@ -3562,6 +4586,7 @@ publish:
   "dependencies": {
     "@aws-sdk/client-athena": "^3.1032.0",
     "@aws-sdk/client-glue": "^3.1032.0",
+    "@clack/prompts": "^1.2.0",
     "sql-render": "^0.3.4"
   },
   "optionalDependencies": {
@@ -3590,111 +4615,86 @@ publish:
 
 Type-safe AWS Athena client for TypeScript. Write SQL, run codegen, get fully typed query functions.
 
-- Write SQL files with `{{variable}}` placeholders
-- Run `npx aathena generate` to create types and query functions from AWS Glue schemas
-- Import and call with full type safety on both parameters and results
+```bash
+npm install aathena
+npx aathena init      # interactive setup: region, database, workgroup
+npx aathena add events --from-schema  # scaffold a starter query + auto-generate
+```
 
-Built on [@aws-sdk/client-athena](https://www.npmjs.com/package/@aws-sdk/client-athena) and [sql-render](https://github.com/bug3/sql-render). See the [`examples/`](examples/) directory for a working project structure.
+That's it. You have a fully typed `events` query ready to import. Edit the SQL, re-run `generate`, and everything stays in sync.
 
-## Installation
+## Quick Start (under 60 seconds)
+
+### 1. Install
 
 ```bash
 npm install aathena
 ```
 
-## Quick Start
-
-### 1. Create config
-
-```json
-// aathena.config.json
-{
-  "database": "sampledb",
-  "workgroup": "primary",
-  "outputLocation": "s3://my-bucket/athena-results/"
-}
-```
-
-### 2. Write SQL
-
-Create a file under `tables/{database}/{table}/{query}.sql`:
-
-```sql
--- tables/sampledb/events/product.sql
-SELECT event_id, event_name, price, created_at
-FROM events
-WHERE status = '{{status}}'
-LIMIT {{limit}}
-```
-
-### 3. Generate
+### 2. Initialize
 
 ```bash
-npx aathena generate
+npx aathena init
 ```
 
-Codegen fetches your table schema from AWS Glue and generates typed query functions:
+`init` reads your AWS credentials, lists your Glue databases and Athena workgroups, and writes `aathena.config.json` + a starter SQL file under `tables/`. The `--force` flag overwrites an existing config; pass `--region`, `--database`, `--workgroup`, `--output-location` for non-interactive use (CI/automation).
 
-```
-generated/
-├── types/sampledb/
-│   └── events.ts          # interface Events { event_id: number; ... }
-├── queries/sampledb/events/
-│   └── product.ts         # export const product = createQuery<Events, ProductParams>(...)
-└── index.ts               # barrel exports
+### 3. Add a query
+
+```bash
+npx aathena add events --from-schema
 ```
 
-### 4. Use
+- `events` becomes `tables/{your-database}/events/default.sql`
+- `--from-schema` pulls Glue column metadata and embeds it as a comment block so you know the shape before writing the query
+- `add` auto-runs `generate` afterwards (disable with `--no-generate`)
+- For a different database: `npx aathena add sales.events` and pick "scaffold with binding" or "switch config" in the prompt
+
+### 4. Use it
 
 ```typescript
 import { createClient } from 'aathena';
-import { product } from './generated';
+import { defaultQuery as events } from './generated';
 
-const athena = createClient(); // reads from aathena.config.json
+const athena = createClient();
+const result = await events(athena, {});
 
-const result = await product(athena, { status: 'active', limit: 99 });
-
-result.rows[0].event_id    // number
-result.rows[0].event_name  // string
-result.rows[0].price       // string (decimal - precision safe)
-result.rows[0].created_at  // Date
+result.rows[0].event_id;    // fully typed from Glue schema
+result.rows[0].created_at;  // Date
 ```
 
-You can also pass config explicitly: `createClient({ database: 'mydb', outputLocation: 's3://...' })`.
+## Commands
 
-## Directory Structure
+| Command | Purpose |
+|---|---|
+| `aathena init` | Interactive project scaffold. Fills config from AWS (region, Glue databases, Athena workgroups, workgroup output location). |
+| `aathena add <table>` | Scaffold a new query under `tables/{database}/{table}/<name>.sql`. Accepts `db.table` for cross-database tables and prompts to resolve mismatches. |
+| `aathena generate` | Re-run codegen (fetch Glue schemas, produce typed query functions). Runs automatically after `add` unless `--no-generate`. |
+| `aathena help` | Show all flags. |
 
-```
-project/
-├── aathena.config.json         # project root marker (required)
-├── tables/                     # SQL files go here
-│   └── sampledb/               # database name
-│       ├── events/             # table name
-│       │   ├── product.sql
-│       │   └── category.sql
-│       └── users/
-│           └── active.sql
-├── generated/                  # codegen output (gitignored)
-└── src/
-```
+### Add flags
 
-`aathena.config.json` must be at the project root. Both the CLI and runtime use it to locate SQL files, so queries work regardless of the working directory.
+- `--name <query-name>` - query filename (default: `default`)
+- `--from-schema` - include Glue column list as a comment block
+- `--force` - overwrite an existing SQL file
+- `--no-generate` - skip the auto-generate step
 
-Convention: `tables/{database}/{table}/{query}.sql`. Nested grouping (e.g. `events/cart/add.sql`) is supported.
+## Writing SQL
 
-## Parameter Type Inference
+Queries live under `tables/{database}/{table}/{query-name}.sql`. The file path drives two things:
 
-Parameter types are inferred automatically from SQL context:
+1. **Which Glue table** codegen fetches the schema from (for result types)
+2. **Which database** the query runs against at runtime (the directory database is used even if it differs from your project's primary `config.database`)
+
+Placeholders use `{{name}}` syntax. Types are inferred from context:
 
 ```sql
-WHERE status = '{{status}}'      -- quoted       → string
-LIMIT {{limit}}                  -- LIMIT/OFFSET → number
-WHERE price >= {{minPrice}}      -- comparison   → number
+WHERE status = '{{status}}'    -- quoted       -> string
+LIMIT {{limit}}                -- LIMIT/OFFSET -> number (positiveInt)
+WHERE price >= {{minPrice}}    -- comparison   -> number
 ```
 
-### Explicit Types with `@param`
-
-For stricter validation, add `@param` annotations:
+For stricter validation, annotate with `-- @param`:
 
 ```sql
 -- @param status enum('active','pending','done')
@@ -3707,17 +4707,17 @@ WHERE status = '{{status}}'
 LIMIT {{limit}}
 ```
 
-Generates narrower types with runtime validation:
+Generates:
 
 ```typescript
-interface ProductParams {
-  status: 'active' | 'pending' | 'done';  // union type
-  limit: number;                           // validated > 0
-  startDate: string;                       // validated YYYY-MM-DD
+interface DefaultParams {
+  status: 'active' | 'pending' | 'done';
+  limit: number;                  // validated > 0
+  startDate: string;              // validated YYYY-MM-DD
 }
 ```
 
-### Available `@param` Types
+### Available `@param` types
 
 | Annotation | TypeScript | Validation |
 |---|---|---|
@@ -3732,11 +4732,9 @@ interface ProductParams {
 | `s3Path` | `string` | `s3://bucket/path` |
 | `enum('a','b','c')` | `'a' \| 'b' \| 'c'` | Whitelist |
 
-Inference and annotations can be mixed in the same file. Annotations take priority.
-
 ## Type Mapping
 
-Table types are generated from the AWS Glue Data Catalog:
+Glue column types map directly to TypeScript:
 
 | Athena | TypeScript | Notes |
 |---|---|---|
@@ -3754,24 +4752,64 @@ Table types are generated from the AWS Glue Data Catalog:
 | `map<K, V>` | `Record<K, V>` | Recursive |
 | `struct<a:T, b:U>` | `{ a: T; b: U }` | Recursive |
 
-### Complex Types
+### Complex types handled automatically
 
-Athena's complex types (`array`, `map`, `struct`) are fully supported, both in generated TypeScript types and at runtime parsing. Nested combinations like `array<map<string, struct<...>>>` work recursively.
-
-This is a common pain point with Athena: the AWS SDK returns every value as a flat string, leaving you to manually parse complex types. Without aathena, you're stuck with workarounds: writing `CAST()` expressions in SQL, creating extra views, or manually calling `JSON.parse()` and hoping the shape is right. aathena handles this automatically, your Parquet/ORC native types map 1:1 to TypeScript, no conversion needed.
+Athena returns every value as a flat string at the SDK level, even when the underlying Parquet/ORC columns are native arrays, maps, or structs. aathena parses them back to native shapes recursively - no `CAST()`, extra views, or manual `JSON.parse` required.
 
 ```typescript
-// Glue schema: tags array<varchar>, metadata map<string,integer>, address struct<city:string,zip:integer>
-
-result.rows[0].tags      // string[]
-result.rows[0].metadata  // Record<string, number>
-result.rows[0].address   // { city: string; zip: number }
-result.rows[0].address.city  // string, direct access just like the source data
+// Glue: tags array<varchar>, metadata map<string,integer>, address struct<city:string,zip:integer>
+row.tags;            // string[]
+row.metadata;        // Record<string, number>
+row.address;         // { city: string; zip: number }
+row.address.city;    // string, direct access
 ```
+
+## Running Queries in Parallel
+
+`parallel()` runs multiple queries concurrently with a bounded cap that respects Athena's per-account active-DML quota. Tasks are passed as thunks (`() => query(...)`) so the helper can gate when each query actually starts.
+
+```typescript
+import { createClient, parallel } from 'aathena';
+import { getUsers, getOrders } from './generated';
+
+const athena = createClient();
+
+const [users, orders] = await parallel(
+  [
+    () => getUsers(athena, { limit: 100 }),
+    () => getOrders(athena, { from: '2026-01-01' }),
+  ],
+  { concurrency: 'auto', client: athena },
+);
+```
+
+### Concurrency resolution
+
+`concurrency` accepts a number or `'auto'`. With `'auto'`, the cap is resolved in this order:
+
+1. `AathenaConfig.maxConcurrency` if set
+2. Live AWS Service Quotas lookup (`L-D405C694` DML, `L-FCDFE414` DDL)
+3. Region-aware conservative fallback (50% of AWS-documented default, clamped to `[5, 25]`)
+
+The live lookup uses `@aws-sdk/client-service-quotas`, an optional dependency loaded via dynamic import. It requires the `servicequotas:GetServiceQuota` IAM permission; without it the lookup fails silently and the fallback is used.
+
+### Options
+
+| Option | Default | Description |
+|---|---|---|
+| `concurrency` | `5` | `number` or `'auto'` |
+| `client` | - | Required when `concurrency: 'auto'` and `maxConcurrency` is unset |
+| `kind` | `'dml'` | `'dml'` or `'ddl'`, selects which quota to probe |
+| `reserveHeadroom` | `1` | Subtracted from the resolved quota |
+| `mode` | `'all'` | `'all'` rejects on first failure; `'allSettled'` returns per-task settlements |
+
+### Automatic retry on throttling
+
+`client.query()` (and anything built on it) retries `StartQueryExecution` with exponential backoff + full jitter when Athena responds with `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED`. Up to 6 attempts. Works whether or not you use `parallel()`.
 
 ## Config
 
-Place `aathena.config.json` at the root of your project. The CLI and runtime will walk up the directory tree to find it automatically.
+`aathena.config.json` lives at your project root. `init` writes it for you; edit as needed afterwards. Both the CLI and runtime walk up the directory tree to find it.
 
 ```json
 {
@@ -3792,7 +4830,7 @@ Place `aathena.config.json` at the root of your project. The CLI and runtime wil
 | Field | Default | Description |
 |---|---|---|
 | `region` | AWS default | AWS region |
-| `database` | *required* | Default Athena database |
+| `database` | *required* | Primary Athena database (used when a query's directory doesn't specify otherwise) |
 | `workgroup` | - | Athena workgroup |
 | `outputLocation` | - | S3 path for query results (optional if workgroup has a default) |
 | `tablesDir` | `./tables` | SQL files directory |
@@ -3804,7 +4842,7 @@ Place `aathena.config.json` at the root of your project. The CLI and runtime wil
 
 ## Query Statistics
 
-Every `QueryResult` includes a `statistics` block from Athena (cost tracking, queueing visibility, cache hits). Pass `{ includeRuntimeStats: true }` to additionally fetch input/output row counts via an extra `GetQueryRuntimeStatistics` API call.
+Every `QueryResult` includes a `statistics` block from Athena (cost tracking, queueing visibility, cache hits). Pass `{ includeRuntimeStats: true }` for input/output row counts via an extra `GetQueryRuntimeStatistics` API call.
 
 ```typescript
 const result = await athena.query<Row>(sql, { includeRuntimeStats: true });
@@ -3827,53 +4865,36 @@ result.statistics.runtime?.outputRows;          // 99
 | `runtime?.inputRows` / `inputBytes` | Opt-in via `includeRuntimeStats` |
 | `runtime?.outputRows` / `outputBytes` | Opt-in via `includeRuntimeStats` |
 
-## Running Queries in Parallel
+## Cross-Database Queries
 
-`parallel()` runs multiple queries concurrently with a bounded cap that respects Athena's per-account service quota on active DML/DDL queries. Tasks are passed as thunks (`() => query(...)`) so the helper can gate when each query actually starts.
+By default every query runs against `config.database`. When a SQL file lives in `tables/{other-db}/...` (different from `config.database`), `generate` automatically emits an explicit per-query binding so it routes to that database at runtime:
 
 ```typescript
-import { createClient, parallel } from 'aathena';
-import { getUsers, getOrders } from './generated';
-
-const athena = createClient();
-
-const [users, orders] = await parallel(
-  [
-    () => getUsers(athena, { limit: 100 }),
-    () => getOrders(athena, { from: '2026-01-01' }),
-  ],
-  { concurrency: 'auto', client: athena },
+// generated/queries/sales/events/default.ts (primary config.database is 'marketing')
+export const default_ = createQuery<Events, DefaultParams>(
+  'tables/sales/events/default.sql',
+  schemaDef,
+  { database: 'sales' },
 );
-
-users.rows[0].id;      // fully typed per query
-orders.rows[0].total;
 ```
 
-### Concurrency resolution
+You don't write this yourself - `add <db>.<table>` and `generate` handle it. Use `client.query(sql, { database: 'sales' })` for the same effect on ad-hoc inline queries.
 
-`concurrency` accepts a number or `'auto'`. With `'auto'`, the cap is resolved in this order:
+## Directory Structure
 
-1. `AathenaConfig.maxConcurrency` if set
-2. Live value from AWS Service Quotas (quota `L-D405C694` for DML, `L-FCDFE414` for DDL)
-3. A conservative region-aware fallback (50% of the AWS-documented default, clamped to `[5, 25]`)
+```
+project/
+├── aathena.config.json        # project root marker, written by 'init'
+├── tables/                    # SQL files
+│   └── sampledb/              # database
+│       └── events/            # table
+│           ├── default.sql
+│           └── daily.sql
+├── generated/                 # codegen output (gitignored)
+└── src/
+```
 
-The live lookup uses `@aws-sdk/client-service-quotas` (declared as an optional dependency, loaded via dynamic import). It requires the `servicequotas:GetServiceQuota` IAM permission. When the permission is missing the call fails silently and the fallback is used.
-
-`reserveHeadroom` (default `1`) is subtracted from the resolved quota to leave room for other workloads.
-
-### Options
-
-| Option | Default | Description |
-|---|---|---|
-| `concurrency` | `5` | `number` or `'auto'` |
-| `client` | - | Required when `concurrency: 'auto'` and `maxConcurrency` is unset |
-| `kind` | `'dml'` | `'dml'` or `'ddl'`, selects which quota to probe |
-| `reserveHeadroom` | `1` | Subtracted from the resolved quota |
-| `mode` | `'all'` | `'all'` rejects on first failure; `'allSettled'` returns per-task settlements |
-
-### Retry on concurrent-limit throttling
-
-`client.query()` (and anything built on it) retries `StartQueryExecution` automatically when Athena responds with `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED`. Backoff is exponential with full jitter, up to 6 attempts. This protects against transient spikes and quota changes even when `parallel()` is not used.
+Nested grouping under a table (e.g. `events/cart/add.sql`) works too - codegen walks the whole tree under `tables/`.
 
 ## Error Handling
 
@@ -3886,7 +4907,7 @@ import {
 } from 'aathena';
 
 try {
-  const result = await product(athena, { status: 'active', limit: 99 });
+  const result = await events(athena, { status: 'active', limit: 99 });
 } catch (err) {
   if (err instanceof QueryTimeoutError) {
     console.log(`Timed out after ${err.timeoutMs}ms: ${err.queryExecutionId}`);
@@ -3897,9 +4918,20 @@ try {
 }
 ```
 
+## Requirements
+
+- Node.js >= 20
+- AWS credentials resolvable via the default provider chain (env, shared config, SSO, IAM role, etc.)
+- IAM permissions:
+  - `athena:StartQueryExecution`, `athena:GetQueryExecution`, `athena:GetQueryResults` (runtime)
+  - `athena:ListWorkGroups`, `athena:GetWorkGroup` (init)
+  - `glue:GetDatabases`, `glue:GetTables`, `glue:GetTable` (init, add, generate)
+  - `servicequotas:GetServiceQuota` (optional, enables `parallel({ concurrency: 'auto' })`)
+  - Your query's S3 read + output-bucket write permissions
+
 ## Related
 
-- [sql-render](https://github.com/bug3/sql-render) - Type-safe SQL templating with injection protection (used internally)
+- [sql-render](https://github.com/bug3/sql-render) - type-safe SQL templating with injection protection (used internally)
 
 ## For LLMs
 
