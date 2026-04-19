@@ -42,6 +42,7 @@ describe('generateQueryFile', () => {
       sqlRelativePath: 'tables/sampledb/events/product.sql',
       tableName: 'events',
       database: 'sampledb',
+      primaryDatabase: 'sampledb',
       parsed,
       typesImportPath: '../../types/sampledb/events',
     });
@@ -53,6 +54,7 @@ describe('generateQueryFile', () => {
     expect(output).toContain('limit: number;');
     expect(output).toContain('export const product = createQuery');
     expect(output).toContain('tables/sampledb/events/product.sql');
+    expect(output).not.toContain('database:');
   });
 
   it('generates query file with @param annotations and schema', () => {
@@ -65,6 +67,7 @@ SELECT * FROM events WHERE status = '{{status}}' LIMIT {{limit}}`;
       sqlRelativePath: 'tables/sampledb/events/product.sql',
       tableName: 'events',
       database: 'sampledb',
+      primaryDatabase: 'sampledb',
       parsed,
       typesImportPath: '../../types/sampledb/events',
     });
@@ -83,11 +86,66 @@ SELECT * FROM events WHERE status = '{{status}}' LIMIT {{limit}}`;
       sqlRelativePath: 'tables/sampledb/events/count.sql',
       tableName: 'events',
       database: 'sampledb',
+      primaryDatabase: 'sampledb',
       parsed,
       typesImportPath: '../../types/sampledb/events',
     });
 
     expect(output).toContain('Record<string, never>');
     expect(output).not.toContain('Params');
+  });
+
+  it('binds per-query database when directory differs from primary (no params)', () => {
+    const sql = `SELECT COUNT(*) as cnt FROM events`;
+    const parsed = parseSQL(sql);
+
+    const output = generateQueryFile({
+      sqlRelativePath: 'tables/sales/events/count.sql',
+      tableName: 'events',
+      database: 'sales',
+      primaryDatabase: 'marketing',
+      parsed,
+      typesImportPath: '../../types/sales/events',
+    });
+
+    expect(output).toContain(`{ database: 'sales' }`);
+    expect(output).toContain('undefined,');
+  });
+
+  it('binds per-query database when directory differs (with params, no schema)', () => {
+    const sql = `SELECT * FROM events WHERE status = '{{status}}' AND name = '{{name}}'`;
+    const parsed = parseSQL(sql);
+
+    const output = generateQueryFile({
+      sqlRelativePath: 'tables/sales/events/product.sql',
+      tableName: 'events',
+      database: 'sales',
+      primaryDatabase: 'marketing',
+      parsed,
+      typesImportPath: '../../types/sales/events',
+    });
+
+    expect(output).toContain(`{ database: 'sales' }`);
+    expect(output).toContain('undefined,');
+    expect(output).not.toContain('schemaDef');
+  });
+
+  it('binds per-query database with @param schema', () => {
+    const sql = `-- @param status enum('active','pending')
+SELECT * FROM events WHERE status = '{{status}}'`;
+    const parsed = parseSQL(sql);
+
+    const output = generateQueryFile({
+      sqlRelativePath: 'tables/sales/events/product.sql',
+      tableName: 'events',
+      database: 'sales',
+      primaryDatabase: 'marketing',
+      parsed,
+      typesImportPath: '../../types/sales/events',
+    });
+
+    expect(output).toContain('schemaDef');
+    expect(output).toContain(`{ database: 'sales' }`);
+    expect(output).not.toContain('undefined,');
   });
 });

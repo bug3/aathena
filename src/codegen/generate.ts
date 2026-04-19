@@ -90,6 +90,7 @@ export async function generate(config: AathenaConfig, cwd: string): Promise<Gene
   // 5. Generate query files
   const queriesDir = resolve(outDir, 'queries');
   let queriesGenerated = 0;
+  const mismatchedDatabases = new Set<string>();
 
   for (const file of sqlFiles) {
     const sql = readFileSync(file.absolutePath, 'utf-8');
@@ -104,16 +105,28 @@ export async function generate(config: AathenaConfig, cwd: string): Promise<Gene
       resolve(typesDir, file.database, `${file.tableName}.ts`),
     );
 
+    if (file.database !== config.database) {
+      mismatchedDatabases.add(file.database);
+    }
+
     const content = generateQueryFile({
       sqlRelativePath: file.relativePathFromRoot,
       tableName: file.tableName,
       database: file.database,
+      primaryDatabase: config.database,
       parsed,
       typesImportPath,
     });
 
     writeFileSync(queryFilePath, content, 'utf-8');
     queriesGenerated++;
+  }
+
+  if (mismatchedDatabases.size > 0) {
+    const list = [...mismatchedDatabases].sort().join(', ');
+    console.log(
+      `  i Bound per-query database for: ${list} (primary is '${config.database}').`,
+    );
   }
 
   // 6. Generate barrel index

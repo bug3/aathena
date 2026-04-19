@@ -10,6 +10,12 @@ export interface QueryGenInput {
   tableName: string;
   /** Database name extracted from directory structure */
   database: string;
+  /**
+   * Project's primary database (AathenaConfig.database). When this differs
+   * from the directory's database, the emitted query binds its own database
+   * explicitly so runtime execution context routes correctly.
+   */
+  primaryDatabase: string;
   /** Parsed SQL with extracted params */
   parsed: ParsedSQL;
   /** Relative import path from generated query file to types file */
@@ -23,6 +29,10 @@ export function generateQueryFile(input: QueryGenInput): string {
 
   const hasSchema = params.length > 0 && params.some((p) => p.schemaType);
   const runtimeImports = hasSchema ? 'createQuery, schema' : 'createQuery';
+  const needsDatabaseBinding = input.database !== input.primaryDatabase;
+  const databaseArg = needsDatabaseBinding
+    ? `  { database: '${input.database}' },`
+    : null;
 
   const lines: string[] = [
     HEADER,
@@ -56,12 +66,17 @@ export function generateQueryFile(input: QueryGenInput): string {
       );
       lines.push(`  '${input.sqlRelativePath}',`);
       lines.push(`  schemaDef,`);
+      if (databaseArg) lines.push(databaseArg);
       lines.push(`);`);
     } else {
       lines.push(
         `export const ${queryFnName} = createQuery<${interfaceName}, ${paramsInterfaceName}>(`,
       );
       lines.push(`  '${input.sqlRelativePath}',`);
+      if (databaseArg) {
+        lines.push(`  undefined,`);
+        lines.push(databaseArg);
+      }
       lines.push(`);`);
     }
   } else {
@@ -71,6 +86,10 @@ export function generateQueryFile(input: QueryGenInput): string {
       `export const ${queryFnName} = createQuery<${interfaceName}, Record<string, never>>(`,
     );
     lines.push(`  '${input.sqlRelativePath}',`);
+    if (databaseArg) {
+      lines.push(`  undefined,`);
+      lines.push(databaseArg);
+    }
     lines.push(`);`);
   }
 
