@@ -697,7 +697,9 @@ export function buildQuerySql(
       .join('\n  AND ');
     parts.push(`WHERE ${predicates}`);
   }
-  parts.push(`LIMIT 10`);
+  // LIMIT as a {{placeholder}}: demonstrates the template syntax and lets
+  // the caller tune the row count at invocation time.
+  parts.push(`LIMIT {{limit}}`);
   parts.push(``);
   return parts.join('\n');
 }
@@ -921,9 +923,11 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
       );
       const absPath = resolve(cwd, sqlPath);
       mkdirSync(dirname(absPath), { recursive: true });
+      // Track every selected table so main.ts reflects the full selection
+      // even on re-runs where the SQL already exists.
+      scaffolded.push({ tableName: table, queryName, requiredPartitions: info.partitions });
       if (!existsSync(absPath)) {
         writeFileSync(absPath, contents, 'utf-8');
-        scaffolded.push({ tableName: table, queryName, requiredPartitions: info.partitions });
         scaffoldedPaths.push(sqlPath);
       }
     }
@@ -941,8 +945,8 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
   }
 
   // Auto-generate so the user lands with typed query functions ready to import
-  const hasScaffolded = scaffolded.length > 0;
-  if (!flags.noGenerate && hasScaffolded) {
+  const hasSelection = scaffolded.length > 0;
+  if (!flags.noGenerate && hasSelection) {
     const spin = p.spinner();
     spin.start('Running generate');
     try {
@@ -958,23 +962,27 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
     }
   }
 
-  // Starter TS file showing how to invoke the generated queries
+  // Starter TS file showing how to invoke the generated queries. Overwritten
+  // under --force so re-running init with a new table selection refreshes
+  // the example; SQL files are always preserved because the user may have
+  // edited them.
   let wroteMain = false;
-  if (!flags.noExample && !flags.noGenerate && hasScaffolded) {
+  if (!flags.noExample && !flags.noGenerate && hasSelection) {
     const mainPath = resolve(cwd, 'src/main.ts');
-    if (existsSync(mainPath)) {
-      p.log.info('src/main.ts exists, not overwriting');
+    const existed = existsSync(mainPath);
+    if (existed && !flags.force) {
+      p.log.info('src/main.ts exists, not overwriting (use --force to regenerate)');
     } else {
       mkdirSync(dirname(mainPath), { recursive: true });
       writeFileSync(mainPath, buildMainExample(scaffolded), 'utf-8');
-      p.log.success('Wrote src/main.ts');
+      p.log.success(existed ? 'Rewrote src/main.ts' : 'Wrote src/main.ts');
       wroteMain = true;
     }
   }
 
   const nextSteps = wroteMain
     ? `Next: npx tsx src/main.ts`
-    : hasScaffolded && !flags.noGenerate
+    : hasSelection && !flags.noGenerate
       ? `Next: import from ./generated and call your queries.`
       : `Next: run 'npx aathena generate' to produce typed query functions.`;
   p.outro(nextSteps);
@@ -1131,7 +1139,9 @@ export function buildSampleSql(
     lines.push(`WHERE ${predicates}`);
   }
 
-  lines.push(`LIMIT 10`);
+  // Use {{limit}} so users encounter the placeholder syntax on their first
+  // query. sql-render infers `limit: number` (positiveInt) from the context.
+  lines.push(`LIMIT {{limit}}`);
   lines.push(``);
 
   return { path, contents: lines.join('\n'), queryName };
@@ -1234,11 +1244,14 @@ export function buildMainExample(entries: ScaffoldedQuery[]): string {
 }
 
 function renderParamsLiteral(partitions: RequiredPartition[]): string {
-  if (partitions.length === 0) return '{}';
-  const pairs = partitions
-    .map((part) => `${part.name}: 'REPLACE_ME'`)
-    .join(', ');
-  return `{ ${pairs} }`;
+  const pairs: string[] = [];
+  for (const part of partitions) {
+    pairs.push(`${part.name}: 'REPLACE_ME'`);
+  }
+  // Scaffolded SQL uses LIMIT {{limit}}; passing a default here matches the
+  // generated params type and keeps main.ts runnable out of the box.
+  pairs.push('limit: 33');
+  return `{ ${pairs.join(', ')} }`;
 }
 
 function buildEmptyExample(): string {
@@ -3728,7 +3741,7 @@ describe('buildQuerySql', () => {
   it('writes a minimal starter query without columns', () => {
     const sql = buildQuerySql('events');
     expect(sql).toContain('FROM events');
-    expect(sql).toContain('LIMIT 10');
+    expect(sql).toContain('LIMIT {{limit}}');
     expect(sql).not.toContain('-- Columns:');
   });
 
@@ -3750,9 +3763,14 @@ describe('buildQuerySql', () => {
     expect(sql).not.toContain('-- Columns:');
   });
 
-  it('does not include {{...}} placeholders the user did not write', () => {
+  it('does not embed {{...}} in comment lines', () => {
     const sql = buildQuerySql('events');
-    expect(sql).not.toMatch(/\{\{[^}]+\}\}/);
+    const commentLines = sql
+      .split('\n')
+      .filter((l) => l.trim().startsWith('--'));
+    for (const line of commentLines) {
+      expect(line).not.toMatch(/\{\{[^}]+\}\}/);
+    }
   });
 
   it('injects WHERE + @param for required partitions', () => {
@@ -4307,7 +4325,7 @@ describe('buildSampleSql', () => {
     expect(file.path).toBe('tables/sampledb/events/default.sql');
     expect(file.queryName).toBe('default');
     expect(file.contents).toContain('FROM events');
-    expect(file.contents).toContain('LIMIT 10');
+    expect(file.contents).toContain('LIMIT {{limit}}');
   });
 
   it('falls back to example_table when no table is provided', () => {
@@ -4316,11 +4334,17 @@ describe('buildSampleSql', () => {
     expect(file.contents).toContain('FROM example_table');
   });
 
-  it('does not include {{...}} placeholders the user did not write', () => {
+  it('does not embed {{...}} in comment lines', () => {
     // sql-render treats any {{token}} in the file as a real param, including
-    // ones that only appear in example comments. Guard against regressions.
+    // ones that only appear in example comments. LIMIT {{limit}} in the body
+    // is intentional; comments must stay clean.
     const file = buildSampleSql('sampledb', 'events');
-    expect(file.contents).not.toMatch(/\{\{[^}]+\}\}/);
+    const commentLines = file.contents
+      .split('\n')
+      .filter((l) => l.trim().startsWith('--'));
+    for (const line of commentLines) {
+      expect(line).not.toMatch(/\{\{[^}]+\}\}/);
+    }
   });
 
   it('emits WHERE + @param for each required partition', () => {
@@ -4354,7 +4378,9 @@ describe('buildMainExample', () => {
     ]);
     expect(out).toContain(`import { createClient } from 'aathena';`);
     expect(out).toContain(`import { eventsDefault } from '../generated';`);
-    expect(out).toContain('const events = await eventsDefault(athena, {});');
+    expect(out).toContain(
+      'const events = await eventsDefault(athena, { limit: 33 });',
+    );
     expect(out).not.toContain('parallel');
   });
 
@@ -4366,8 +4392,8 @@ describe('buildMainExample', () => {
     expect(out).toContain(`import { createClient, parallel } from 'aathena';`);
     expect(out).toContain(`import { eventsDefault, ordersDefault } from '../generated';`);
     expect(out).toContain('const [events, orders] = await parallel(');
-    expect(out).toContain(`() => eventsDefault(athena, {}),`);
-    expect(out).toContain(`() => ordersDefault(athena, {}),`);
+    expect(out).toContain(`() => eventsDefault(athena, { limit: 33 }),`);
+    expect(out).toContain(`() => ordersDefault(athena, { limit: 33 }),`);
     expect(out).toContain(`{ concurrency: 'auto', client: athena }`);
   });
 
@@ -4384,7 +4410,7 @@ describe('buildMainExample', () => {
     expect(out).toContain(`SELECT 1 AS ping`);
   });
 
-  it('passes REPLACE_ME placeholders and adds a note for tables with required partitions', () => {
+  it('passes REPLACE_ME placeholders alongside limit for tables with required partitions', () => {
     const out = buildMainExample([
       {
         tableName: 'events',
@@ -4397,7 +4423,7 @@ describe('buildMainExample', () => {
     ]);
     expect(out).toContain(`Replace 'REPLACE_ME' with real values`);
     expect(out).toContain(
-      `await eventsDefault(athena, { tenant_id: 'REPLACE_ME', dt: 'REPLACE_ME' });`,
+      `await eventsDefault(athena, { tenant_id: 'REPLACE_ME', dt: 'REPLACE_ME', limit: 33 });`,
     );
   });
 });
