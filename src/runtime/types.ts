@@ -10,6 +10,10 @@ export interface AathenaConfig {
     pollingInterval?: number;
     maxPollingInterval?: number;
   };
+  // Manual override for parallel({ concurrency: 'auto' }) when service-quotas
+  // is unreachable. When set, takes precedence over the live quota lookup and
+  // the region-based fallback table.
+  maxConcurrency?: number;
 }
 
 export interface QueryRuntimeRows {

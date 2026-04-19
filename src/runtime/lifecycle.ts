@@ -1,6 +1,8 @@
 import {
   AthenaClient,
   StartQueryExecutionCommand,
+  type StartQueryExecutionCommandInput,
+  type StartQueryExecutionCommandOutput,
   GetQueryExecutionCommand,
   GetQueryResultsCommand,
   GetQueryRuntimeStatisticsCommand,
@@ -18,6 +20,9 @@ import type { ColumnMeta, QueryStatistics, QueryRuntimeRows } from './types';
 const DEFAULT_TIMEOUT = 300_000; // 5 minutes
 const DEFAULT_POLL_INTERVAL = 500;
 const DEFAULT_MAX_POLL_INTERVAL = 5_000;
+const MAX_START_RETRIES = 6;
+const START_RETRY_BASE_MS = 500;
+const START_RETRY_MAX_MS = 10_000;
 
 interface LifecycleOptions {
   timeout?: number;
@@ -37,6 +42,39 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isConcurrentQueryLimitError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { name?: unknown; Reason?: unknown };
+  return (
+    e.name === 'TooManyRequestsException' &&
+    e.Reason === 'CONCURRENT_QUERY_LIMIT_EXCEEDED'
+  );
+}
+
+async function startWithRetry(
+  client: AthenaClient,
+  input: StartQueryExecutionCommandInput,
+): Promise<StartQueryExecutionCommandOutput> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await client.send(new StartQueryExecutionCommand(input));
+    } catch (err) {
+      if (!isConcurrentQueryLimitError(err) || attempt >= MAX_START_RETRIES) {
+        throw err;
+      }
+      const backoff = Math.min(
+        START_RETRY_BASE_MS * 2 ** attempt,
+        START_RETRY_MAX_MS,
+      );
+      // Full jitter: uniform in [0, backoff]
+      const delay = Math.floor(Math.random() * backoff);
+      await sleep(delay);
+      attempt++;
+    }
+  }
+}
+
 export async function executeQuery(
   client: AthenaClient,
   sql: string,
@@ -49,15 +87,13 @@ export async function executeQuery(
   const pollInterval = options.pollingInterval ?? DEFAULT_POLL_INTERVAL;
   const maxPollInterval = options.maxPollingInterval ?? DEFAULT_MAX_POLL_INTERVAL;
 
-  // Start query
-  const startResult = await client.send(
-    new StartQueryExecutionCommand({
-      QueryString: sql,
-      QueryExecutionContext: { Database: database },
-      WorkGroup: workgroup,
-      ...(outputLocation && { ResultConfiguration: { OutputLocation: outputLocation } }),
-    }),
-  );
+  // Start query with retry on concurrent-query-limit throttling
+  const startResult = await startWithRetry(client, {
+    QueryString: sql,
+    QueryExecutionContext: { Database: database },
+    WorkGroup: workgroup,
+    ...(outputLocation && { ResultConfiguration: { OutputLocation: outputLocation } }),
+  });
 
   const queryExecutionId = startResult.QueryExecutionId;
   if (!queryExecutionId) {

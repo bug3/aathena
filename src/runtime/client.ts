@@ -6,23 +6,31 @@ import type { AathenaConfig, QueryOptions, QueryResult } from './types';
 
 export class AathenaClient {
   private readonly athena: AwsAthenaClient;
-  private readonly config: AathenaConfig;
+  private readonly _config: AathenaConfig;
 
   constructor(config: AathenaConfig) {
-    this.config = config;
+    this._config = config;
     this.athena = new AwsAthenaClient({
       region: config.region,
     });
+  }
+
+  get config(): Readonly<AathenaConfig> {
+    return this._config;
+  }
+
+  get region(): string | undefined {
+    return this._config.region;
   }
 
   async query<T>(sql: string, options: QueryOptions = {}): Promise<QueryResult<T>> {
     const output = await executeQuery(
       this.athena,
       sql,
-      this.config.database,
-      this.config.workgroup,
-      this.config.outputLocation,
-      { ...this.config.query, includeRuntimeStats: options.includeRuntimeStats },
+      this._config.database,
+      this._config.workgroup,
+      this._config.outputLocation,
+      { ...this._config.query, includeRuntimeStats: options.includeRuntimeStats },
     );
 
     const rows = output.rows.map((row) =>
