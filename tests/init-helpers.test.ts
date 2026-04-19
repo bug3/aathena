@@ -70,7 +70,7 @@ describe('buildSampleSql', () => {
     expect(file.path).toBe('tables/sampledb/events/default.sql');
     expect(file.queryName).toBe('default');
     expect(file.contents).toContain('FROM events');
-    expect(file.contents).toContain('LIMIT 10');
+    expect(file.contents).toContain('LIMIT {{limit}}');
   });
 
   it('falls back to example_table when no table is provided', () => {
@@ -79,11 +79,17 @@ describe('buildSampleSql', () => {
     expect(file.contents).toContain('FROM example_table');
   });
 
-  it('does not include {{...}} placeholders the user did not write', () => {
+  it('does not embed {{...}} in comment lines', () => {
     // sql-render treats any {{token}} in the file as a real param, including
-    // ones that only appear in example comments. Guard against regressions.
+    // ones that only appear in example comments. LIMIT {{limit}} in the body
+    // is intentional; comments must stay clean.
     const file = buildSampleSql('sampledb', 'events');
-    expect(file.contents).not.toMatch(/\{\{[^}]+\}\}/);
+    const commentLines = file.contents
+      .split('\n')
+      .filter((l) => l.trim().startsWith('--'));
+    for (const line of commentLines) {
+      expect(line).not.toMatch(/\{\{[^}]+\}\}/);
+    }
   });
 
   it('emits WHERE + @param for each required partition', () => {
@@ -117,7 +123,9 @@ describe('buildMainExample', () => {
     ]);
     expect(out).toContain(`import { createClient } from 'aathena';`);
     expect(out).toContain(`import { eventsDefault } from '../generated';`);
-    expect(out).toContain('const events = await eventsDefault(athena, {});');
+    expect(out).toContain(
+      'const events = await eventsDefault(athena, { limit: 33 });',
+    );
     expect(out).not.toContain('parallel');
   });
 
@@ -129,8 +137,8 @@ describe('buildMainExample', () => {
     expect(out).toContain(`import { createClient, parallel } from 'aathena';`);
     expect(out).toContain(`import { eventsDefault, ordersDefault } from '../generated';`);
     expect(out).toContain('const [events, orders] = await parallel(');
-    expect(out).toContain(`() => eventsDefault(athena, {}),`);
-    expect(out).toContain(`() => ordersDefault(athena, {}),`);
+    expect(out).toContain(`() => eventsDefault(athena, { limit: 33 }),`);
+    expect(out).toContain(`() => ordersDefault(athena, { limit: 33 }),`);
     expect(out).toContain(`{ concurrency: 'auto', client: athena }`);
   });
 
@@ -147,7 +155,7 @@ describe('buildMainExample', () => {
     expect(out).toContain(`SELECT 1 AS ping`);
   });
 
-  it('passes REPLACE_ME placeholders and adds a note for tables with required partitions', () => {
+  it('passes REPLACE_ME placeholders alongside limit for tables with required partitions', () => {
     const out = buildMainExample([
       {
         tableName: 'events',
@@ -160,7 +168,7 @@ describe('buildMainExample', () => {
     ]);
     expect(out).toContain(`Replace 'REPLACE_ME' with real values`);
     expect(out).toContain(
-      `await eventsDefault(athena, { tenant_id: 'REPLACE_ME', dt: 'REPLACE_ME' });`,
+      `await eventsDefault(athena, { tenant_id: 'REPLACE_ME', dt: 'REPLACE_ME', limit: 33 });`,
     );
   });
 });

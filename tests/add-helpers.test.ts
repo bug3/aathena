@@ -49,7 +49,7 @@ describe('buildQuerySql', () => {
   it('writes a minimal starter query without columns', () => {
     const sql = buildQuerySql('events');
     expect(sql).toContain('FROM events');
-    expect(sql).toContain('LIMIT 10');
+    expect(sql).toContain('LIMIT {{limit}}');
     expect(sql).not.toContain('-- Columns:');
   });
 
@@ -71,9 +71,14 @@ describe('buildQuerySql', () => {
     expect(sql).not.toContain('-- Columns:');
   });
 
-  it('does not include {{...}} placeholders the user did not write', () => {
+  it('does not embed {{...}} in comment lines', () => {
     const sql = buildQuerySql('events');
-    expect(sql).not.toMatch(/\{\{[^}]+\}\}/);
+    const commentLines = sql
+      .split('\n')
+      .filter((l) => l.trim().startsWith('--'));
+    for (const line of commentLines) {
+      expect(line).not.toMatch(/\{\{[^}]+\}\}/);
+    }
   });
 
   it('injects WHERE + @param for required partitions', () => {

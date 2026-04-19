@@ -220,7 +220,9 @@ export function buildQuerySql(
       .join('\n  AND ');
     parts.push(`WHERE ${predicates}`);
   }
-  parts.push(`LIMIT 10`);
+  // LIMIT as a {{placeholder}}: demonstrates the template syntax and lets
+  // the caller tune the row count at invocation time.
+  parts.push(`LIMIT {{limit}}`);
   parts.push(``);
   return parts.join('\n');
 }

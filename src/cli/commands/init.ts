@@ -425,7 +425,9 @@ export function buildSampleSql(
     lines.push(`WHERE ${predicates}`);
   }
 
-  lines.push(`LIMIT 10`);
+  // Use {{limit}} so users encounter the placeholder syntax on their first
+  // query. sql-render infers `limit: number` (positiveInt) from the context.
+  lines.push(`LIMIT {{limit}}`);
   lines.push(``);
 
   return { path, contents: lines.join('\n'), queryName };
@@ -528,11 +530,14 @@ export function buildMainExample(entries: ScaffoldedQuery[]): string {
 }
 
 function renderParamsLiteral(partitions: RequiredPartition[]): string {
-  if (partitions.length === 0) return '{}';
-  const pairs = partitions
-    .map((part) => `${part.name}: 'REPLACE_ME'`)
-    .join(', ');
-  return `{ ${pairs} }`;
+  const pairs: string[] = [];
+  for (const part of partitions) {
+    pairs.push(`${part.name}: 'REPLACE_ME'`);
+  }
+  // Scaffolded SQL uses LIMIT {{limit}}; passing a default here matches the
+  // generated params type and keeps main.ts runnable out of the box.
+  pairs.push('limit: 33');
+  return `{ ${pairs.join(', ')} }`;
 }
 
 function buildEmptyExample(): string {
