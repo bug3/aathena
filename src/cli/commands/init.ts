@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import * as p from '@clack/prompts';
 import type { AathenaConfig } from '../../runtime/types';
+import { generate } from '../../codegen/generate';
 import {
   listDatabases,
   listTables,
@@ -16,7 +17,12 @@ export interface InitFlags {
   database?: string;
   workgroup?: string;
   outputLocation?: string;
+  /** Skip the table-scaffolding step entirely. */
   noSample?: boolean;
+  /** Comma-separated list of tables to scaffold; bypasses the multi-select prompt. */
+  tables?: string;
+  /** Do not auto-run 'generate' after scaffolding. */
+  noGenerate?: boolean;
 }
 
 const CONFIG_FILE = 'aathena.config.json';
@@ -172,28 +178,89 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
     p.log.success('Updated .gitignore');
   }
 
-  // Sample SQL
+  // Table scaffolding
+  const scaffolded: string[] = [];
   if (!flags.noSample) {
-    let sampleTable: string | undefined;
-    try {
-      const tables = await listTables(effectiveRegion, database);
-      sampleTable = tables[0]?.name;
-    } catch {
-      // fine, use placeholder
+    const selected = await resolveTablesToScaffold(effectiveRegion, database, flags.tables);
+    for (const table of selected) {
+      const { path: sqlPath, contents } = buildSampleSql(database, table);
+      const absPath = resolve(cwd, sqlPath);
+      mkdirSync(dirname(absPath), { recursive: true });
+      if (!existsSync(absPath)) {
+        writeFileSync(absPath, contents, 'utf-8');
+        scaffolded.push(sqlPath);
+      }
     }
-    const { path: sqlPath, contents } = buildSampleSql(database, sampleTable);
-    const absPath = resolve(cwd, sqlPath);
-    mkdirSync(dirname(absPath), { recursive: true });
-    if (!existsSync(absPath)) {
-      writeFileSync(absPath, contents, 'utf-8');
-      p.log.success(`Wrote ${sqlPath}`);
+    if (scaffolded.length > 0) {
+      p.log.success(
+        `Scaffolded ${scaffolded.length} starter SQL file(s): ${scaffolded.join(', ')}`,
+      );
     }
   }
 
-  p.outro(
-    `Next: run 'npx aathena generate' to produce typed query functions.`,
-  );
+  // Auto-generate so the user lands with typed query functions ready to import
+  if (!flags.noGenerate && scaffolded.length > 0) {
+    const spin = p.spinner();
+    spin.start('Running generate');
+    try {
+      const result = await generate(config, cwd);
+      spin.stop(
+        `Generated ${result.typesGenerated} type(s), ${result.queriesGenerated} query file(s)`,
+      );
+    } catch (err) {
+      spin.stop('Generate failed');
+      p.log.warn(formatAwsError(err));
+      p.outro(`Fix the error above and re-run 'npx aathena generate'.`);
+      return 1;
+    }
+  }
+
+  const nextSteps =
+    scaffolded.length > 0 && !flags.noGenerate
+      ? `Next: import your query from ./generated. Use 'npx aathena add <table>' for more.`
+      : `Next: run 'npx aathena generate' to produce typed query functions.`;
+  p.outro(nextSteps);
   return 0;
+}
+
+async function resolveTablesToScaffold(
+  region: string | undefined,
+  database: string,
+  tablesFlag: string | undefined,
+): Promise<string[]> {
+  // Explicit flag wins, no prompt
+  if (tablesFlag !== undefined) {
+    return tablesFlag
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+
+  const spin = p.spinner();
+  spin.start(`Listing tables in ${database}`);
+  let tables: Awaited<ReturnType<typeof listTables>> = [];
+  try {
+    tables = await listTables(region, database);
+    spin.stop(`Found ${tables.length} table(s)`);
+  } catch (err) {
+    spin.stop('Could not list tables');
+    p.log.warn(formatAwsError(err));
+  }
+
+  if (tables.length === 0) {
+    // Keep the old behaviour: write a placeholder so the user sees how to shape
+    // the next file.
+    return ['example_table'];
+  }
+
+  const choice = await p.multiselect({
+    message: 'Scaffold starter queries for which tables?',
+    initialValues: [tables[0].name],
+    required: false,
+    options: tables.map((t) => ({ value: t.name, label: t.name })),
+  });
+  if (p.isCancel(choice)) return [];
+  return choice as string[];
 }
 
 export interface BuildConfigInput {
@@ -228,9 +295,9 @@ export interface SampleSqlFile {
 
 export function buildSampleSql(database: string, tableName?: string): SampleSqlFile {
   const table = tableName ?? 'example_table';
-  const path = `tables/${database}/${table}/example.sql`;
+  const path = `tables/${database}/${table}/default.sql`;
   const contents =
-    `-- Sample aathena query. Edit or delete as needed.\n` +
+    `-- Starter aathena query. Edit or delete as needed.\n` +
     `-- Placeholders use {{name}} syntax; annotate types with '-- @param name type' on their own line.\n` +
     `\n` +
     `SELECT *\n` +

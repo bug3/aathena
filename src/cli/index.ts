@@ -19,7 +19,9 @@ Init flags:
   --database <name>        Skip the database prompt
   --workgroup <name>       Skip the workgroup prompt
   --output-location <s3>   Skip the output-location prompt
-  --no-sample              Do not write a sample SQL file
+  --tables <a,b,c>         Comma-separated tables to scaffold (skips multi-select)
+  --no-sample              Do not scaffold any starter SQL
+  --no-generate            Do not auto-run generate after scaffolding
 
 Add flags:
   --name <query-name>      Query filename (default: 'default')
@@ -58,6 +60,8 @@ async function main() {
       workgroup: flagString(flags, 'workgroup'),
       outputLocation: flagString(flags, 'output-location'),
       noSample: flagBool(flags, 'sample') === false,
+      tables: flagString(flags, 'tables'),
+      noGenerate: flagBool(flags, 'generate') === false,
     });
     process.exit(code);
   }

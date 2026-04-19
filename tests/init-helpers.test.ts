@@ -61,14 +61,14 @@ describe('mergeGitignore', () => {
 describe('buildSampleSql', () => {
   it('uses the provided table name in path and SQL', () => {
     const file = buildSampleSql('sampledb', 'events');
-    expect(file.path).toBe('tables/sampledb/events/example.sql');
+    expect(file.path).toBe('tables/sampledb/events/default.sql');
     expect(file.contents).toContain('FROM events');
     expect(file.contents).toContain('LIMIT 10');
   });
 
   it('falls back to example_table when no table is provided', () => {
     const file = buildSampleSql('sampledb');
-    expect(file.path).toBe('tables/sampledb/example_table/example.sql');
+    expect(file.path).toBe('tables/sampledb/example_table/default.sql');
     expect(file.contents).toContain('FROM example_table');
   });
 });
