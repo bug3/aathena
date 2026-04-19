@@ -44,6 +44,10 @@ export interface QueryStatistics {
 export interface QueryOptions {
   // Issue an extra GetQueryRuntimeStatistics call and surface input/output row counts.
   includeRuntimeStats?: boolean;
+  // Override the execution context database for this call. Takes precedence over
+  // AathenaConfig.database. Used by generated queries whose directory database
+  // differs from the project's primary database.
+  database?: string;
 }
 
 export interface QueryResult<T> {

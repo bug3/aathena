@@ -11,9 +11,19 @@ type QueryFn<TResult, TParams> = (
   params: TParams,
 ) => Promise<QueryResult<TResult>>;
 
+export interface CreateQueryOptions {
+  /**
+   * Execution context database for this query. Takes precedence over
+   * AathenaConfig.database. Emitted by codegen when the query's directory
+   * database differs from the project's primary database.
+   */
+  database?: string;
+}
+
 export function createQuery<TResult, TParams = Record<string, never>>(
   sqlPath: string,
   schemaDef?: Record<string, { validate(val: unknown): boolean }>,
+  options: CreateQueryOptions = {},
 ): QueryFn<TResult, TParams> {
   // Defer project-root lookup and template load until the first call, so
   // importing a generated query doesn't trigger filesystem I/O at module
@@ -30,7 +40,7 @@ export function createQuery<TResult, TParams = Record<string, never>>(
       renderFn = built as RenderFn;
     }
     const { sql } = renderFn(params as never);
-    return client.query<TResult>(sql);
+    return client.query<TResult>(sql, options.database ? { database: options.database } : {});
   };
 }
 

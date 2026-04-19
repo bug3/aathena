@@ -27,7 +27,7 @@ export class AathenaClient {
     const output = await executeQuery(
       this.athena,
       sql,
-      this._config.database,
+      options.database ?? this._config.database,
       this._config.workgroup,
       this._config.outputLocation,
       { ...this._config.query, includeRuntimeStats: options.includeRuntimeStats },
