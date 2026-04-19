@@ -10,6 +10,7 @@ Type-safe AWS Athena client for TypeScript. Write SQL, run codegen, get fully ty
 - Write SQL files with `{{variable}}` placeholders
 - Scaffold a project from AWS with `npx aathena init`
 - Fully type-safe parameters and results, sourced from your AWS Glue catalog
+- Auto-detects injected-projection partitions (including those hidden behind Presto/Trino views) and scaffolds the required WHERE predicates for you
 - Run queries concurrently with `parallel()`, which respects Athena's per-account service quota
 
 Built on [@aws-sdk/client-athena](https://www.npmjs.com/package/@aws-sdk/client-athena) and [sql-render](https://github.com/bug3/sql-render). See the [`examples/`](examples/) directory for a working project structure.
@@ -28,7 +29,21 @@ npm install aathena
 npx aathena init
 ```
 
-`init` reads your AWS credentials, lists your Glue databases and Athena workgroups, lets you multi-select which tables to scaffold SQL for, runs `generate`, and writes a runnable `src/main.ts` that imports and invokes every scaffolded query (single call or `parallel()` example depending on how many you picked). Pass `--region`, `--database`, `--workgroup`, `--output-location`, `--tables a,b,c` for non-interactive use; `--no-example` skips `src/main.ts`, `--no-generate` skips the auto-generate step.
+`init` walks you through a complete setup:
+
+1. Reads AWS credentials, lists Glue databases and Athena workgroups, inherits the workgroup's default output location when available
+2. Writes `aathena.config.json` and adds `generated/` + `node_modules/` to `.gitignore`
+3. Lets you multi-select which tables to scaffold starter SQL for
+4. Probes each selected table (and any Presto/Trino view it points at) for injected-projection partitions that require WHERE predicates
+5. Writes `tables/{db}/{table}/default.sql` with `LIMIT {{limit}}`, plus the right `-- @param` / `WHERE` lines
+6. Runs `generate` to produce typed query functions under `generated/`
+7. Writes a runnable `src/main.ts` that imports and calls every scaffolded query (single call for 1 table, `parallel()` demo for 2+)
+
+Non-interactive flags: `--region`, `--database`, `--workgroup`, `--output-location`, `--tables a,b,c`.
+
+Opt-outs: `--no-sample` (skip SQL scaffolding), `--no-generate` (skip auto-generate), `--no-example` (skip `src/main.ts`).
+
+Re-run: `--force` overwrites `aathena.config.json` and regenerates `src/main.ts` to reflect the current selection. SQL files are always preserved because you may have edited them.
 
 ### 3. Run it
 
@@ -36,15 +51,26 @@ npx aathena init
 npx tsx src/main.ts
 ```
 
-The file is already wired to `./generated`, so you get rows printed from your actual tables. Open `src/main.ts` to shape the calls (params, destructuring, error handling), or delete it and write your own.
+If any scaffolded query needs partition values, `main.ts` passes `REPLACE_ME` placeholders with a note at the top of the file. Replace them with real values, then run.
+
+## Adding more queries
+
+```bash
+npx aathena add events                  # tables/{config.db}/events/default.sql
+npx aathena add sales.events            # cross-db; interactive prompt resolves mismatch
+npx aathena add events --from-schema    # embed Glue column list as a comment block
+npx aathena add events --name daily     # scaffold daily.sql instead of default.sql
+```
+
+`add` always probes partitions (even without `--from-schema`) and auto-runs `generate` unless `--no-generate`.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `aathena init` | Interactive project scaffold. Fills config from AWS (region, Glue databases, Athena workgroups, workgroup output location). |
+| `aathena init` | Interactive project scaffold. Fills config from AWS, picks tables, probes partitions, runs generate, writes `src/main.ts`. |
 | `aathena add <table>` | Scaffold a new query under `tables/{database}/{table}/<name>.sql`. Accepts `db.table` for cross-database tables and prompts to resolve mismatches. |
-| `aathena generate` | Re-run codegen (fetch Glue schemas, produce typed query functions). Runs automatically after `add` unless `--no-generate`. |
+| `aathena generate` | Re-run codegen (fetch Glue schemas, produce typed query functions). Runs automatically after `init` and `add` unless `--no-generate`. |
 | `aathena help` | Show all flags. |
 
 ### Add flags
@@ -56,16 +82,11 @@ The file is already wired to `./generated`, so you get rows printed from your ac
 
 ## Writing SQL
 
-Queries live under `tables/{database}/{table}/{query-name}.sql`. The file path drives two things:
-
-1. **Which Glue table** codegen fetches the schema from (for result types)
-2. **Which database** the query runs against at runtime (the directory database is used even if it differs from your project's primary `config.database`)
-
-Placeholders use `{{name}}` syntax. Types are inferred from context:
+Queries live under `tables/{database}/{table}/{query-name}.sql`. Placeholders use `{{name}}` syntax. Types are inferred from SQL context:
 
 ```sql
 WHERE status = '{{status}}'    -- quoted       -> string
-LIMIT {{limit}}                -- LIMIT/OFFSET -> number (positiveInt)
+LIMIT {{limit}}                -- LIMIT/OFFSET -> positiveInt
 WHERE price >= {{minPrice}}    -- comparison   -> number
 ```
 
@@ -107,6 +128,21 @@ interface DefaultParams {
 | `s3Path` | `string` | `s3://bucket/path` |
 | `enum('a','b','c')` | `'a' \| 'b' \| 'c'` | Whitelist |
 
+### Generated export names
+
+The barrel at `generated/index.ts` re-exports every query under a JS-safe identifier:
+
+- `latest.sql` -> `latest`
+- `default.sql` (JS reserved word) -> aliased as `<table>Default`, e.g. `eventsDefault`
+- Two queries with the same filename across tables -> aliased as `<table>{Query}` on both sides
+
+So a scaffolded `tables/sampledb/events/default.sql` shows up as:
+
+```typescript
+import { eventsDefault } from './generated';
+const result = await eventsDefault(athena, { limit: 50 });
+```
+
 ## Type Mapping
 
 Glue column types map directly to TypeScript:
@@ -137,6 +173,32 @@ row.tags;            // string[]
 row.metadata;        // Record<string, number>
 row.address;         // { city: string; zip: number }
 row.address.city;    // string, direct access
+```
+
+## Partition Projection + Views
+
+Athena tables with partition projection `type=injected` require a static WHERE predicate on the partition column. Without it, queries fail at runtime with `CONSTRAINT_VIOLATION`.
+
+`init` and `add` inspect each selected table's Glue `Parameters` for projection settings and scaffold the SQL with:
+
+- `-- @param <col> string` annotations
+- `WHERE <col> = '{{<col>}}'` predicates
+- `REPLACE_ME` placeholder values in `src/main.ts` plus a note at the top
+
+When the target is a Presto/Trino view (detected via `TableType === 'VIRTUAL_VIEW'` or the `presto_view` / `trino_view` parameter flag), aathena decodes the view's `ViewOriginalText`, extracts `FROM` / `JOIN` table references, and probes those underlying tables recursively. Max traversal depth is 3 levels with a visited set to defuse cycles. If a view's references cannot be parsed or the probe hits the limit, a note is written into the scaffolded SQL so you know to add the predicates by hand.
+
+Example output for a view over a partitioned table:
+
+```sql
+-- Starter aathena query. Edit or delete as needed.
+-- See README for placeholder and parameter syntax.
+-- View 'analytics.events' traced to: analytics.events_raw
+-- @param tenant_id string
+
+SELECT *
+FROM events
+WHERE tenant_id = '{{tenant_id}}'
+LIMIT {{limit}}
 ```
 
 ## Running Queries in Parallel
@@ -181,6 +243,21 @@ The live lookup uses `@aws-sdk/client-service-quotas`, an optional dependency lo
 ### Automatic retry on throttling
 
 `client.query()` (and anything built on it) retries `StartQueryExecution` with exponential backoff + full jitter when Athena responds with `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED`. Up to 6 attempts. Works whether or not you use `parallel()`.
+
+## Cross-Database Queries
+
+By default every query runs against `config.database`. When a SQL file lives in `tables/{other-db}/...` (different from `config.database`), `generate` automatically emits an explicit per-query binding so it routes to that database at runtime:
+
+```typescript
+// generated/queries/sales/events/default.ts (config.database is 'marketing')
+export const default_ = createQuery<Events, DefaultParams>(
+  'tables/sales/events/default.sql',
+  schemaDef,
+  { database: 'sales' },
+);
+```
+
+You don't write this yourself - `add <db>.<table>` and `generate` handle it. For ad-hoc inline queries use `client.query(sql, { database: 'sales' })`.
 
 ## Config
 
@@ -240,21 +317,6 @@ result.statistics.runtime?.outputRows;          // 99
 | `runtime?.inputRows` / `inputBytes` | Opt-in via `includeRuntimeStats` |
 | `runtime?.outputRows` / `outputBytes` | Opt-in via `includeRuntimeStats` |
 
-## Cross-Database Queries
-
-By default every query runs against `config.database`. When a SQL file lives in `tables/{other-db}/...` (different from `config.database`), `generate` automatically emits an explicit per-query binding so it routes to that database at runtime:
-
-```typescript
-// generated/queries/sales/events/default.ts (primary config.database is 'marketing')
-export const default_ = createQuery<Events, DefaultParams>(
-  'tables/sales/events/default.sql',
-  schemaDef,
-  { database: 'sales' },
-);
-```
-
-You don't write this yourself - `add <db>.<table>` and `generate` handle it. Use `client.query(sql, { database: 'sales' })` for the same effect on ad-hoc inline queries.
-
 ## Directory Structure
 
 ```
@@ -267,6 +329,7 @@ project/
 │           └── daily.sql
 ├── generated/                 # codegen output (gitignored)
 └── src/
+    └── main.ts                # runnable example, written by 'init'
 ```
 
 Nested grouping under a table (e.g. `events/cart/add.sql`) works too - codegen walks the whole tree under `tables/`.
@@ -282,7 +345,7 @@ import {
 } from 'aathena';
 
 try {
-  const result = await events(athena, { status: 'active', limit: 99 });
+  const result = await eventsDefault(athena, { status: 'active', limit: 99 });
 } catch (err) {
   if (err instanceof QueryTimeoutError) {
     console.log(`Timed out after ${err.timeoutMs}ms: ${err.queryExecutionId}`);
