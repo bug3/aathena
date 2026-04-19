@@ -82,6 +82,8 @@ src/
     errors.ts
     index.ts
     lifecycle.ts
+    limits.ts
+    parallel.ts
     parser.ts
     query.ts
     types.ts
@@ -89,6 +91,8 @@ src/
 tests/
   codegen.test.ts
   config.test.ts
+  limits.test.ts
+  parallel.test.ts
   parser.test.ts
   sql-parser.test.ts
   type-map.test.ts
@@ -1254,23 +1258,31 @@ import type { AathenaConfig, QueryOptions, QueryResult } from './types';
 
 export class AathenaClient {
   private readonly athena: AwsAthenaClient;
-  private readonly config: AathenaConfig;
+  private readonly _config: AathenaConfig;
 
   constructor(config: AathenaConfig) {
-    this.config = config;
+    this._config = config;
     this.athena = new AwsAthenaClient({
       region: config.region,
     });
+  }
+
+  get config(): Readonly<AathenaConfig> {
+    return this._config;
+  }
+
+  get region(): string | undefined {
+    return this._config.region;
   }
 
   async query<T>(sql: string, options: QueryOptions = {}): Promise<QueryResult<T>> {
     const output = await executeQuery(
       this.athena,
       sql,
-      this.config.database,
-      this.config.workgroup,
-      this.config.outputLocation,
-      { ...this.config.query, includeRuntimeStats: options.includeRuntimeStats },
+      this._config.database,
+      this._config.workgroup,
+      this._config.outputLocation,
+      { ...this._config.query, includeRuntimeStats: options.includeRuntimeStats },
     );
 
     const rows = output.rows.map((row) =>
@@ -1420,6 +1432,9 @@ export class ColumnParseError extends AathenaError {
 export { AathenaClient, createClient } from './client';
 export { createQuery, schema } from './query';
 export { defineConfig, findProjectRoot } from './config';
+export { parallel } from './parallel';
+export type { ParallelOptions } from './parallel';
+export type { QuotaKind } from './limits';
 
 export type { AathenaConfig, QueryResult, ColumnMeta } from './types';
 export {
@@ -1436,6 +1451,8 @@ export {
 import {
   AthenaClient,
   StartQueryExecutionCommand,
+  type StartQueryExecutionCommandInput,
+  type StartQueryExecutionCommandOutput,
   GetQueryExecutionCommand,
   GetQueryResultsCommand,
   GetQueryRuntimeStatisticsCommand,
@@ -1453,6 +1470,9 @@ import type { ColumnMeta, QueryStatistics, QueryRuntimeRows } from './types';
 const DEFAULT_TIMEOUT = 300_000; // 5 minutes
 const DEFAULT_POLL_INTERVAL = 500;
 const DEFAULT_MAX_POLL_INTERVAL = 5_000;
+const MAX_START_RETRIES = 6;
+const START_RETRY_BASE_MS = 500;
+const START_RETRY_MAX_MS = 10_000;
 
 interface LifecycleOptions {
   timeout?: number;
@@ -1472,6 +1492,39 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isConcurrentQueryLimitError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { name?: unknown; Reason?: unknown };
+  return (
+    e.name === 'TooManyRequestsException' &&
+    e.Reason === 'CONCURRENT_QUERY_LIMIT_EXCEEDED'
+  );
+}
+
+async function startWithRetry(
+  client: AthenaClient,
+  input: StartQueryExecutionCommandInput,
+): Promise<StartQueryExecutionCommandOutput> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await client.send(new StartQueryExecutionCommand(input));
+    } catch (err) {
+      if (!isConcurrentQueryLimitError(err) || attempt >= MAX_START_RETRIES) {
+        throw err;
+      }
+      const backoff = Math.min(
+        START_RETRY_BASE_MS * 2 ** attempt,
+        START_RETRY_MAX_MS,
+      );
+      // Full jitter: uniform in [0, backoff]
+      const delay = Math.floor(Math.random() * backoff);
+      await sleep(delay);
+      attempt++;
+    }
+  }
+}
+
 export async function executeQuery(
   client: AthenaClient,
   sql: string,
@@ -1484,15 +1537,13 @@ export async function executeQuery(
   const pollInterval = options.pollingInterval ?? DEFAULT_POLL_INTERVAL;
   const maxPollInterval = options.maxPollingInterval ?? DEFAULT_MAX_POLL_INTERVAL;
 
-  // Start query
-  const startResult = await client.send(
-    new StartQueryExecutionCommand({
-      QueryString: sql,
-      QueryExecutionContext: { Database: database },
-      WorkGroup: workgroup,
-      ...(outputLocation && { ResultConfiguration: { OutputLocation: outputLocation } }),
-    }),
-  );
+  // Start query with retry on concurrent-query-limit throttling
+  const startResult = await startWithRetry(client, {
+    QueryString: sql,
+    QueryExecutionContext: { Database: database },
+    WorkGroup: workgroup,
+    ...(outputLocation && { ResultConfiguration: { OutputLocation: outputLocation } }),
+  });
 
   const queryExecutionId = startResult.QueryExecutionId;
   if (!queryExecutionId) {
@@ -1622,6 +1673,301 @@ async function collectResults(
   } while (nextToken);
 
   return { columns, rows };
+}
+````
+
+## File: src/runtime/limits.ts
+````typescript
+/**
+ * Athena concurrent query quotas.
+ *
+ * Athena enforces two service quotas, per-account per-region:
+ *   - Active DML queries (L-D405C694) - SELECT, CTAS, INSERT INTO
+ *   - Active DDL queries (L-FCDFE414) - CREATE TABLE, ALTER TABLE ADD PARTITION
+ *
+ * Both are adjustable in the Service Quotas console. Defaults vary by region.
+ * Values here reflect the AWS-documented defaults as of 2026-04-19, sourced
+ * from https://docs.aws.amazon.com/general/latest/gr/athena.html.
+ */
+
+export type QuotaKind = 'dml' | 'ddl';
+
+const DML_DEFAULT_BY_REGION: Record<string, number> = {
+  // Tier 1: 200
+  'us-east-1': 200,
+  // Tier 2: 150
+  'us-east-2': 150,
+  'us-west-2': 150,
+  'eu-west-1': 150,
+  'eu-central-1': 150,
+  'ap-northeast-1': 150,
+  // Tier 3: 100
+  'ap-south-1': 100,
+  'ap-northeast-2': 100,
+  'ap-southeast-1': 100,
+  'ap-southeast-2': 100,
+  'eu-west-2': 100,
+  // All other regions (us-west-1, ca-*, sa-*, af-*, me-*, il-*, mx-*,
+  // eu-north-1, eu-south-*, eu-west-3, eu-central-2, ap-east-*, ap-south-2,
+  // ap-northeast-3, ap-southeast-3..7, GovCloud) default to 20.
+};
+
+const UNKNOWN_REGION_DML_DEFAULT = 20;
+const DDL_DEFAULT = 20;
+
+/**
+ * AWS-documented default quota for this region and kind. Returns the value
+ * AWS publishes for fresh accounts - not the account's current quota.
+ */
+export function getDocumentedDefault(region: string, kind: QuotaKind): number {
+  if (kind === 'ddl') return DDL_DEFAULT;
+  return DML_DEFAULT_BY_REGION[region] ?? UNKNOWN_REGION_DML_DEFAULT;
+}
+
+/**
+ * Conservative fallback used when the live service-quotas lookup fails
+ * (no IAM permission, offline, throttled, etc). Applies a 50% safety margin
+ * against the documented default, clamped to [5, 25]. This keeps the cap
+ * well below AWS defaults even if the account has reduced quotas, while
+ * staying well above 1 for regions with the lowest (20) default.
+ */
+export function getConservativeFallback(region: string, kind: QuotaKind): number {
+  const base = getDocumentedDefault(region, kind);
+  const halved = Math.floor(base * 0.5);
+  return Math.max(5, Math.min(25, halved));
+}
+
+interface CacheEntry {
+  value: number;
+  fetchedAt: number;
+}
+
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1h
+const quotaCache = new Map<string, CacheEntry>();
+
+/** Test hook. Not part of the public API. */
+export function _clearQuotaCache(): void {
+  quotaCache.clear();
+}
+
+/**
+ * Fetch the live service quota for this account+region via Service Quotas.
+ *
+ * The @aws-sdk/client-service-quotas dependency is optional - if not
+ * installed, the fetch fails fast and the caller falls back to
+ * getConservativeFallback. Loaded via dynamic import so bundles that never
+ * call this don't pay for it.
+ */
+export async function fetchLiveQuota(
+  region: string,
+  kind: QuotaKind,
+): Promise<number> {
+  const cacheKey = `${region}:${kind}`;
+  const cached = quotaCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.value;
+  }
+
+  const quotaCode = kind === 'dml' ? 'L-D405C694' : 'L-FCDFE414';
+
+  let mod: typeof import('@aws-sdk/client-service-quotas');
+  try {
+    mod = await import('@aws-sdk/client-service-quotas');
+  } catch {
+    throw new Error(
+      "@aws-sdk/client-service-quotas is not installed. Install it, or pass " +
+        "{ concurrency: <number> } / set 'maxConcurrency' in aathena.config.json.",
+    );
+  }
+
+  const { ServiceQuotasClient, GetServiceQuotaCommand } = mod;
+  const client = new ServiceQuotasClient({ region });
+  const res = await client.send(
+    new GetServiceQuotaCommand({
+      ServiceCode: 'athena',
+      QuotaCode: quotaCode,
+    }),
+  );
+
+  const value = res.Quota?.Value;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(
+      `Service Quotas returned no value for ${quotaCode} in ${region}`,
+    );
+  }
+
+  const rounded = Math.floor(value);
+  quotaCache.set(cacheKey, { value: rounded, fetchedAt: Date.now() });
+  return rounded;
+}
+````
+
+## File: src/runtime/parallel.ts
+````typescript
+import { AathenaClient } from './client';
+import {
+  fetchLiveQuota,
+  getConservativeFallback,
+  type QuotaKind,
+} from './limits';
+
+export interface ParallelOptions {
+  /**
+   * Max number of tasks running at once.
+   *   - `number`: explicit cap.
+   *   - `'auto'`: resolve from (in order) client.config.maxConcurrency,
+   *     live service-quotas lookup, or a region-aware conservative fallback.
+   *     Requires { client } when used without maxConcurrency.
+   *
+   * Default: 5.
+   */
+  concurrency?: number | 'auto';
+
+  /** Required when `concurrency: 'auto'` is used and maxConcurrency is not set. */
+  client?: AathenaClient;
+
+  /** Which quota to probe when resolving 'auto'. Default: 'dml'. */
+  kind?: QuotaKind;
+
+  /**
+   * Leave headroom for other concurrent workloads (other processes, other
+   * Athena users on the same account). Subtracted from the resolved quota.
+   * Default: 1.
+   */
+  reserveHeadroom?: number;
+
+  /**
+   * - `'all'` (default): reject on first failure, stop dispatching new tasks.
+   * - `'allSettled'`: always resolve, with settlement objects per task.
+   */
+  mode?: 'all' | 'allSettled';
+}
+
+type Thunk<R> = () => Promise<R>;
+
+type AwaitedThunkTuple<T extends readonly Thunk<unknown>[]> = {
+  -readonly [K in keyof T]: T[K] extends Thunk<infer R> ? R : never;
+};
+
+type SettledThunkTuple<T extends readonly Thunk<unknown>[]> = {
+  -readonly [K in keyof T]: T[K] extends Thunk<infer R>
+    ? PromiseSettledResult<R>
+    : never;
+};
+
+/**
+ * Run a list of query thunks with a bounded concurrency cap.
+ *
+ * Tasks MUST be passed as thunks (`() => query(...)`), not already-started
+ * promises. A thunk lets the helper delay the actual query dispatch until
+ * a worker slot is free; passing `query(...)` directly would fire every
+ * query immediately and the cap would be meaningless.
+ *
+ * @example
+ *   const [users, orders] = await parallel(
+ *     [
+ *       () => getUsers(client, {}),
+ *       () => getOrders(client, { from: '2026-01-01' }),
+ *     ],
+ *     { concurrency: 'auto', client },
+ *   );
+ */
+export async function parallel<const T extends readonly Thunk<unknown>[]>(
+  tasks: T,
+  options?: ParallelOptions & { mode?: 'all' },
+): Promise<AwaitedThunkTuple<T>>;
+export async function parallel<const T extends readonly Thunk<unknown>[]>(
+  tasks: T,
+  options: ParallelOptions & { mode: 'allSettled' },
+): Promise<SettledThunkTuple<T>>;
+export async function parallel<const T extends readonly Thunk<unknown>[]>(
+  tasks: T,
+  options: ParallelOptions = {},
+): Promise<AwaitedThunkTuple<T> | SettledThunkTuple<T>> {
+  const { mode = 'all' } = options;
+  const limit = await resolveLimit(options);
+  return runBounded(tasks, limit, mode) as Promise<
+    AwaitedThunkTuple<T> | SettledThunkTuple<T>
+  >;
+}
+
+async function resolveLimit(opts: ParallelOptions): Promise<number> {
+  const { concurrency = 5, client, kind = 'dml', reserveHeadroom = 1 } = opts;
+
+  if (typeof concurrency === 'number') {
+    return Math.max(1, Math.floor(concurrency));
+  }
+
+  // concurrency === 'auto'
+  const override = client?.config.maxConcurrency;
+  if (typeof override === 'number') {
+    return Math.max(1, Math.floor(override) - reserveHeadroom);
+  }
+
+  if (!client) {
+    throw new Error(
+      "parallel({ concurrency: 'auto' }) requires { client } when " +
+        "aathena.config.json does not specify 'maxConcurrency'.",
+    );
+  }
+
+  const region = client.region;
+  if (!region) {
+    throw new Error(
+      "parallel({ concurrency: 'auto' }) requires a region on the client " +
+        "(set 'region' in aathena.config.json or AWS_REGION).",
+    );
+  }
+
+  let resolved: number;
+  try {
+    resolved = await fetchLiveQuota(region, kind);
+  } catch {
+    resolved = getConservativeFallback(region, kind);
+  }
+
+  return Math.max(1, resolved - reserveHeadroom);
+}
+
+async function runBounded<R>(
+  tasks: readonly Thunk<R>[],
+  limit: number,
+  mode: 'all' | 'allSettled',
+): Promise<unknown[]> {
+  if (tasks.length === 0) return [];
+
+  const results = new Array<unknown>(tasks.length);
+  const errorBox: { err: unknown } = { err: undefined };
+  let hasError = false;
+  let cursor = 0;
+
+  const worker = async (): Promise<void> => {
+    while (true) {
+      if (mode === 'all' && hasError) return;
+      const i = cursor++;
+      if (i >= tasks.length) return;
+      try {
+        const value = await tasks[i]();
+        results[i] =
+          mode === 'allSettled' ? { status: 'fulfilled', value } : value;
+      } catch (err) {
+        if (mode === 'allSettled') {
+          results[i] = { status: 'rejected', reason: err };
+        } else if (!hasError) {
+          errorBox.err = err;
+          hasError = true;
+        }
+      }
+    }
+  };
+
+  const workerCount = Math.min(limit, tasks.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+
+  if (mode === 'all' && hasError) {
+    throw errorBox.err;
+  }
+  return results;
 }
 ````
 
@@ -1897,6 +2243,10 @@ export interface AathenaConfig {
     pollingInterval?: number;
     maxPollingInterval?: number;
   };
+  // Manual override for parallel({ concurrency: 'auto' }) when service-quotas
+  // is unreachable. When set, takes precedence over the live quota lookup and
+  // the region-based fallback table.
+  maxConcurrency?: number;
 }
 
 export interface QueryRuntimeRows {
@@ -1948,6 +2298,9 @@ export interface ColumnMeta {
 export { AathenaClient, createClient } from './runtime/client';
 export { createQuery, schema } from './runtime/query';
 export { defineConfig } from './runtime/config';
+export { parallel } from './runtime/parallel';
+export type { ParallelOptions } from './runtime/parallel';
+export type { QuotaKind } from './runtime/limits';
 
 export type {
   AathenaConfig,
@@ -2157,6 +2510,272 @@ describe('loadConfig', () => {
       process.cwd = original;
     }
     teardown();
+  });
+});
+````
+
+## File: tests/limits.test.ts
+````typescript
+import { describe, it, expect } from 'vitest';
+import {
+  getDocumentedDefault,
+  getConservativeFallback,
+} from '../src/runtime/limits';
+
+describe('getDocumentedDefault', () => {
+  it('returns 200 for us-east-1 DML (Tier 1)', () => {
+    expect(getDocumentedDefault('us-east-1', 'dml')).toBe(200);
+  });
+
+  it('returns 150 for Tier 2 regions', () => {
+    for (const r of ['us-east-2', 'us-west-2', 'eu-west-1', 'eu-central-1', 'ap-northeast-1']) {
+      expect(getDocumentedDefault(r, 'dml')).toBe(150);
+    }
+  });
+
+  it('returns 100 for Tier 3 regions', () => {
+    for (const r of ['ap-south-1', 'ap-northeast-2', 'ap-southeast-1', 'ap-southeast-2', 'eu-west-2']) {
+      expect(getDocumentedDefault(r, 'dml')).toBe(100);
+    }
+  });
+
+  it('returns 20 for Tier 4 (unknown / low-tier) regions', () => {
+    for (const r of ['us-west-1', 'sa-east-1', 'af-south-1', 'me-central-1', 'ca-west-1', 'ap-southeast-7']) {
+      expect(getDocumentedDefault(r, 'dml')).toBe(20);
+    }
+  });
+
+  it('returns 20 for DDL in every region', () => {
+    for (const r of ['us-east-1', 'eu-west-1', 'sa-east-1', 'made-up-region']) {
+      expect(getDocumentedDefault(r, 'ddl')).toBe(20);
+    }
+  });
+});
+
+describe('getConservativeFallback', () => {
+  it('clamps to 25 even for Tier 1 us-east-1', () => {
+    // 200 * 0.5 = 100, clamped to 25
+    expect(getConservativeFallback('us-east-1', 'dml')).toBe(25);
+  });
+
+  it('clamps to 25 for Tier 2 (150/2 = 75)', () => {
+    expect(getConservativeFallback('eu-west-1', 'dml')).toBe(25);
+  });
+
+  it('clamps to 25 for Tier 3 (100/2 = 50)', () => {
+    expect(getConservativeFallback('eu-west-2', 'dml')).toBe(25);
+  });
+
+  it('returns floor-min 10 for Tier 4 (20/2 = 10)', () => {
+    expect(getConservativeFallback('sa-east-1', 'dml')).toBe(10);
+  });
+
+  it('returns 10 for DDL everywhere (20/2 = 10)', () => {
+    expect(getConservativeFallback('us-east-1', 'ddl')).toBe(10);
+    expect(getConservativeFallback('made-up', 'ddl')).toBe(10);
+  });
+});
+````
+
+## File: tests/parallel.test.ts
+````typescript
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { AathenaClient } from '../src/runtime/client';
+
+vi.mock('../src/runtime/limits', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/runtime/limits')>();
+  return {
+    ...actual,
+    fetchLiveQuota: vi.fn(actual.fetchLiveQuota),
+  };
+});
+
+const { parallel } = await import('../src/runtime/parallel');
+const limits = await import('../src/runtime/limits');
+const fetchLiveQuotaMock = vi.mocked(limits.fetchLiveQuota);
+
+function makeClient(overrides: Partial<ConstructorParameters<typeof AathenaClient>[0]> = {}) {
+  return new AathenaClient({
+    database: 'test_db',
+    region: 'us-east-1',
+    ...overrides,
+  });
+}
+
+describe('parallel - basic behaviour', () => {
+  it('runs all thunks and preserves tuple order + types', async () => {
+    const [a, b, c] = await parallel(
+      [
+        async () => 1 as const,
+        async () => 'two' as const,
+        async () => true as const,
+      ],
+      { concurrency: 2 },
+    );
+    expect(a).toBe(1);
+    expect(b).toBe('two');
+    expect(c).toBe(true);
+  });
+
+  it('returns empty array for empty input', async () => {
+    const out = await parallel([] as const, { concurrency: 5 });
+    expect(out).toEqual([]);
+  });
+
+  it('rejects on first failure in "all" mode', async () => {
+    await expect(
+      parallel(
+        [
+          async () => 1,
+          async () => {
+            throw new Error('boom');
+          },
+          async () => 3,
+        ],
+        { concurrency: 1 },
+      ),
+    ).rejects.toThrow('boom');
+  });
+
+  it('returns settlements in "allSettled" mode', async () => {
+    const results = await parallel(
+      [
+        async () => 1,
+        async () => {
+          throw new Error('boom');
+        },
+      ],
+      { concurrency: 2, mode: 'allSettled' },
+    );
+    expect(results[0]).toEqual({ status: 'fulfilled', value: 1 });
+    expect(results[1]).toMatchObject({ status: 'rejected' });
+  });
+});
+
+describe('parallel - concurrency cap', () => {
+  it('never exceeds the configured limit', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const makeTask = () => async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 20));
+      inFlight--;
+      return 'ok';
+    };
+
+    await parallel(
+      Array.from({ length: 10 }, makeTask),
+      { concurrency: 3 },
+    );
+
+    expect(peak).toBeLessThanOrEqual(3);
+  });
+
+  it('floors fractional concurrency and enforces minimum of 1', async () => {
+    let peak = 0;
+    let inFlight = 0;
+    await parallel(
+      Array.from({ length: 5 }, () => async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+      }),
+      { concurrency: 0 }, // clamped to 1
+    );
+    expect(peak).toBe(1);
+  });
+});
+
+describe("parallel - concurrency: 'auto'", () => {
+  beforeEach(() => {
+    limits._clearQuotaCache();
+    fetchLiveQuotaMock.mockReset();
+  });
+
+  it('uses config.maxConcurrency when set (no fetch, no fallback)', async () => {
+    const client = makeClient({ maxConcurrency: 4 });
+    let peak = 0;
+    let inFlight = 0;
+    await parallel(
+      Array.from({ length: 8 }, () => async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 10));
+        inFlight--;
+      }),
+      { concurrency: 'auto', client, reserveHeadroom: 0 },
+    );
+    expect(peak).toBeLessThanOrEqual(4);
+  });
+
+  it('applies reserveHeadroom on maxConcurrency', async () => {
+    const client = makeClient({ maxConcurrency: 5 });
+    let peak = 0;
+    let inFlight = 0;
+    await parallel(
+      Array.from({ length: 10 }, () => async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 10));
+        inFlight--;
+      }),
+      { concurrency: 'auto', client, reserveHeadroom: 2 }, // effective = 3
+    );
+    expect(peak).toBeLessThanOrEqual(3);
+  });
+
+  it('throws when client missing', async () => {
+    await expect(
+      parallel([async () => 1], { concurrency: 'auto' }),
+    ).rejects.toThrow(/requires \{ client \}/);
+  });
+
+  it('throws when region missing and no maxConcurrency', async () => {
+    const client = new AathenaClient({ database: 'x' }); // no region
+    await expect(
+      parallel([async () => 1], { concurrency: 'auto', client }),
+    ).rejects.toThrow(/requires a region/);
+  });
+
+  it('falls back to conservative region table when live fetch fails', async () => {
+    // sa-east-1 documented default=20 → conservative fallback=10
+    const client = makeClient({ region: 'sa-east-1' });
+    fetchLiveQuotaMock.mockRejectedValueOnce(new Error('simulated AccessDenied'));
+
+    let peak = 0;
+    let inFlight = 0;
+    await parallel(
+      Array.from({ length: 20 }, () => async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+      }),
+      { concurrency: 'auto', client, reserveHeadroom: 0 },
+    );
+
+    expect(peak).toBeLessThanOrEqual(10);
+  });
+
+  it('uses live quota when fetch succeeds', async () => {
+    const client = makeClient({ region: 'us-east-1' });
+    fetchLiveQuotaMock.mockResolvedValueOnce(6);
+
+    let peak = 0;
+    let inFlight = 0;
+    await parallel(
+      Array.from({ length: 15 }, () => async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+      }),
+      { concurrency: 'auto', client, reserveHeadroom: 0 },
+    );
+
+    expect(peak).toBeLessThanOrEqual(6);
   });
 });
 ````
@@ -2915,6 +3534,9 @@ publish:
     "@aws-sdk/client-athena": "^3.750.0",
     "@aws-sdk/client-glue": "^3.750.0",
     "sql-render": "^0.3.3"
+  },
+  "optionalDependencies": {
+    "@aws-sdk/client-service-quotas": "^3.750.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
