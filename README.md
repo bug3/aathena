@@ -8,7 +8,7 @@
 Type-safe AWS Athena client for TypeScript.
 
 - Scaffold a project straight from your AWS account with `npx aathena init`
-- Fully type-safe parameters and results, sourced from your AWS Glue catalog
+- 1:1 type mapping from AWS Glue to TypeScript, including native Parquet/ORC arrays, maps, and structs - no `CAST()` or `JSON.parse`
 - Run queries concurrently with `parallel()`, with automatic detection of injected-projection partitions (including those hidden behind Presto/Trino views)
 
 Built on [@aws-sdk/client-athena](https://www.npmjs.com/package/@aws-sdk/client-athena) and [sql-render](https://github.com/bug3/sql-render). See the [`examples/`](examples/) directory for working projects.
@@ -36,6 +36,22 @@ npx tsx src/main.ts
 ```
 
 If any scaffolded query needs partition values, `main.ts` passes `REPLACE_ME` placeholders with a note at the top of the file. Replace them with real values, then run.
+
+Every row is typed 1:1 against your Glue schema. Scalars land as native TypeScript (`Date` for timestamps, `bigint`, `number`, `string`), and Parquet/ORC arrays, maps, and structs parse back recursively - even nested. Hover any field in your editor to see the exact column type, with no `CAST()` in SQL and no manual `JSON.parse`:
+
+```typescript
+// Glue: event_id bigint, created_at timestamp, tags array<varchar>, metadata map<string,int>, address struct<city:string>, items array<struct<qty:int>>
+
+const result = await getEvents(athena, { limit: 33 });
+const row = result.rows[0];
+
+row.eventId;         // bigint
+row.createdAt;       // Date
+row.tags;            // string[]
+row.metadata;        // Record<string, number>
+row.address.city;    // string - direct struct field access
+row.items[0].qty;    // number - nested array of struct
+```
 
 ## Write Queries
 
@@ -312,7 +328,7 @@ Re-runs codegen: fetches Glue schemas for every SQL file under `tables/` in para
 
 ### Type mapping
 
-Glue column types map directly to TypeScript:
+Glue column types map 1:1 to TypeScript:
 
 | Athena | TypeScript |
 |---|---|
@@ -330,9 +346,7 @@ Glue column types map directly to TypeScript:
 | `map<K, V>` | `Record<K, V>` |
 | `struct<a:T, b:U>` | `{ a: T; b: U }` |
 
-Arrays, maps, and structs parse recursively at runtime; no `CAST()` or manual `JSON.parse` needed.
-
-Regular columns are nullable (`T | null`); partition keys are always non-null.
+Regular columns are nullable (`T | null`); partition keys are always non-null. See [Quick Start step 3](#3-run-it) for a typed-access demo that covers scalars and nested complex types.
 
 ### `@param` types
 
