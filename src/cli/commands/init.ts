@@ -10,6 +10,8 @@ import {
   listWorkGroups,
   getWorkGroupDetails,
   resolveRegion,
+  fetchRequiredPartitions,
+  type RequiredPartition,
 } from '../aws-discovery';
 
 export interface InitFlags {
@@ -31,6 +33,7 @@ export interface InitFlags {
 interface ScaffoldedQuery {
   tableName: string;
   queryName: string;
+  requiredPartitions: RequiredPartition[];
 }
 
 const CONFIG_FILE = 'aathena.config.json';
@@ -191,19 +194,35 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
   const scaffoldedPaths: string[] = [];
   if (!flags.noSample) {
     const selected = await resolveTablesToScaffold(effectiveRegion, database, flags.tables);
+    const partitionsByTable = await resolvePartitionsForSelected(
+      effectiveRegion,
+      database,
+      selected,
+    );
     for (const table of selected) {
-      const { path: sqlPath, contents, queryName } = buildSampleSql(database, table);
+      const requiredPartitions = partitionsByTable.get(table) ?? [];
+      const { path: sqlPath, contents, queryName } = buildSampleSql(
+        database,
+        table,
+        requiredPartitions,
+      );
       const absPath = resolve(cwd, sqlPath);
       mkdirSync(dirname(absPath), { recursive: true });
       if (!existsSync(absPath)) {
         writeFileSync(absPath, contents, 'utf-8');
-        scaffolded.push({ tableName: table, queryName });
+        scaffolded.push({ tableName: table, queryName, requiredPartitions });
         scaffoldedPaths.push(sqlPath);
       }
     }
     if (scaffoldedPaths.length > 0) {
       p.log.success(
         `Scaffolded ${scaffoldedPaths.length} starter SQL file(s): ${scaffoldedPaths.join(', ')}`,
+      );
+    }
+    const hasInjected = scaffolded.some((s) => s.requiredPartitions.length > 0);
+    if (hasInjected) {
+      p.log.info(
+        `Injected-projection partitions detected: scaffolded SQL includes WHERE predicates and @param lines.`,
       );
     }
   }
@@ -247,6 +266,37 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
       : `Next: run 'npx aathena generate' to produce typed query functions.`;
   p.outro(nextSteps);
   return 0;
+}
+
+async function resolvePartitionsForSelected(
+  region: string | undefined,
+  database: string,
+  tables: string[],
+): Promise<Map<string, RequiredPartition[]>> {
+  const out = new Map<string, RequiredPartition[]>();
+  if (tables.length === 0) return out;
+
+  const spin = p.spinner();
+  spin.start('Inspecting table partitions');
+  const settled = await Promise.allSettled(
+    tables.map((t) => fetchRequiredPartitions(region, database, t)),
+  );
+  let withPartitions = 0;
+  settled.forEach((res, i) => {
+    const table = tables[i];
+    if (res.status === 'fulfilled') {
+      out.set(table, res.value);
+      if (res.value.length > 0) withPartitions++;
+    } else {
+      out.set(table, []);
+    }
+  });
+  spin.stop(
+    withPartitions > 0
+      ? `Partition probe done (${withPartitions} table(s) need WHERE predicates)`
+      : 'Partition probe done',
+  );
+  return out;
 }
 
 async function resolveTablesToScaffold(
@@ -320,18 +370,40 @@ export interface SampleSqlFile {
   queryName: string;
 }
 
-export function buildSampleSql(database: string, tableName?: string): SampleSqlFile {
+export function buildSampleSql(
+  database: string,
+  tableName?: string,
+  requiredPartitions: RequiredPartition[] = [],
+): SampleSqlFile {
   const table = tableName ?? 'example_table';
   const queryName = 'default';
   const path = `tables/${database}/${table}/${queryName}.sql`;
-  const contents =
-    `-- Starter aathena query. Edit or delete as needed.\n` +
-    `-- See README for placeholder and parameter syntax.\n` +
-    `\n` +
-    `SELECT *\n` +
-    `FROM ${table}\n` +
-    `LIMIT 10\n`;
-  return { path, contents, queryName };
+
+  const lines: string[] = [
+    `-- Starter aathena query. Edit or delete as needed.`,
+    `-- See README for placeholder and parameter syntax.`,
+  ];
+
+  // @param annotations for Athena-required partition predicates
+  for (const part of requiredPartitions) {
+    lines.push(`-- @param ${part.name} string`);
+  }
+
+  lines.push(``);
+  lines.push(`SELECT *`);
+  lines.push(`FROM ${table}`);
+
+  if (requiredPartitions.length > 0) {
+    const predicates = requiredPartitions
+      .map((part) => `${part.name} = '{{${part.name}}}'`)
+      .join('\n  AND ');
+    lines.push(`WHERE ${predicates}`);
+  }
+
+  lines.push(`LIMIT 10`);
+  lines.push(``);
+
+  return { path, contents: lines.join('\n'), queryName };
 }
 
 /**
@@ -352,6 +424,10 @@ export function barrelExportName(tableName: string, queryName: string): string {
  * Produce a runnable TypeScript file that imports every scaffolded query and
  * shows the user how to call them. Single scaffold -> one call; 2+ -> a
  * parallel() demo so the user sees both invocation styles.
+ *
+ * When a scaffolded table has injected-projection partitions, the call site
+ * passes REPLACE_ME placeholder values. A note at the top of the file tells
+ * the user where to edit before running.
  */
 export function buildMainExample(entries: ScaffoldedQuery[]): string {
   if (entries.length === 0) return buildEmptyExample();
@@ -364,26 +440,42 @@ export function buildMainExample(entries: ScaffoldedQuery[]): string {
   const importList = exports.map((e) => e.exportName).join(', ');
   const usesParallel = entries.length >= 2;
   const runtimeImports = usesParallel ? 'createClient, parallel' : 'createClient';
+  const hasPlaceholders = exports.some((e) => e.requiredPartitions.length > 0);
 
   const lines: string[] = [
     `// Generated by 'aathena init'. Delete or adapt as needed.`,
+  ];
+  if (hasPlaceholders) {
+    lines.push(
+      `// NOTE: Some scaffolded tables have injected-projection partitions that`,
+      `// require static WHERE predicates. Replace 'REPLACE_ME' with real values`,
+      `// below before running.`,
+    );
+  }
+  lines.push(
     `import { ${runtimeImports} } from 'aathena';`,
     `import { ${importList} } from '../generated';`,
     ``,
     `async function main() {`,
     `  const athena = createClient();`,
     ``,
-  ];
+  );
 
   if (!usesParallel) {
     const only = exports[0];
+    const paramsLiteral = renderParamsLiteral(only.requiredPartitions);
     lines.push(
-      `  const ${only.tableName} = await ${only.exportName}(athena, {});`,
+      `  const ${only.tableName} = await ${only.exportName}(athena, ${paramsLiteral});`,
       `  console.log(\`${only.tableName}: \${${only.tableName}.rows.length} rows\`);`,
     );
   } else {
     const binds = exports.map((e) => e.tableName).join(', ');
-    const calls = exports.map((e) => `      () => ${e.exportName}(athena, {}),`).join('\n');
+    const calls = exports
+      .map(
+        (e) =>
+          `      () => ${e.exportName}(athena, ${renderParamsLiteral(e.requiredPartitions)}),`,
+      )
+      .join('\n');
     const log = exports.map((e) => `${e.tableName}: \${${e.tableName}.rows.length} rows`).join(', ');
     lines.push(
       `  // Run all scaffolded queries in parallel. 'concurrency: auto' respects`,
@@ -408,6 +500,14 @@ export function buildMainExample(entries: ScaffoldedQuery[]): string {
     ``,
   );
   return lines.join('\n');
+}
+
+function renderParamsLiteral(partitions: RequiredPartition[]): string {
+  if (partitions.length === 0) return '{}';
+  const pairs = partitions
+    .map((part) => `${part.name}: 'REPLACE_ME'`)
+    .join(', ');
+  return `{ ${pairs} }`;
 }
 
 function buildEmptyExample(): string {

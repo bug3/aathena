@@ -75,4 +75,12 @@ describe('buildQuerySql', () => {
     const sql = buildQuerySql('events');
     expect(sql).not.toMatch(/\{\{[^}]+\}\}/);
   });
+
+  it('injects WHERE + @param for required partitions', () => {
+    const sql = buildQuerySql('events', undefined, [
+      { name: 'tenant_id', type: 'string' },
+    ]);
+    expect(sql).toContain('-- @param tenant_id string');
+    expect(sql).toContain(`WHERE tenant_id = '{{tenant_id}}'`);
+  });
 });

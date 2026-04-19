@@ -85,6 +85,17 @@ describe('buildSampleSql', () => {
     const file = buildSampleSql('sampledb', 'events');
     expect(file.contents).not.toMatch(/\{\{[^}]+\}\}/);
   });
+
+  it('emits WHERE + @param for each required partition', () => {
+    const file = buildSampleSql('sampledb', 'events', [
+      { name: 'tenant_id', type: 'string' },
+      { name: 'dt', type: 'string' },
+    ]);
+    expect(file.contents).toContain('-- @param tenant_id string');
+    expect(file.contents).toContain('-- @param dt string');
+    expect(file.contents).toContain(`WHERE tenant_id = '{{tenant_id}}'`);
+    expect(file.contents).toContain(`AND dt = '{{dt}}'`);
+  });
 });
 
 describe('barrelExportName', () => {
@@ -101,7 +112,9 @@ describe('barrelExportName', () => {
 
 describe('buildMainExample', () => {
   it('produces a single-call template for one scaffolded query', () => {
-    const out = buildMainExample([{ tableName: 'events', queryName: 'default' }]);
+    const out = buildMainExample([
+      { tableName: 'events', queryName: 'default', requiredPartitions: [] },
+    ]);
     expect(out).toContain(`import { createClient } from 'aathena';`);
     expect(out).toContain(`import { eventsDefault } from '../generated';`);
     expect(out).toContain('const events = await eventsDefault(athena, {});');
@@ -110,8 +123,8 @@ describe('buildMainExample', () => {
 
   it('produces a parallel() template for 2+ scaffolded queries', () => {
     const out = buildMainExample([
-      { tableName: 'events', queryName: 'default' },
-      { tableName: 'orders', queryName: 'default' },
+      { tableName: 'events', queryName: 'default', requiredPartitions: [] },
+      { tableName: 'orders', queryName: 'default', requiredPartitions: [] },
     ]);
     expect(out).toContain(`import { createClient, parallel } from 'aathena';`);
     expect(out).toContain(`import { eventsDefault, ordersDefault } from '../generated';`);
@@ -122,7 +135,9 @@ describe('buildMainExample', () => {
   });
 
   it('always ends with a main().catch wrapper', () => {
-    const out = buildMainExample([{ tableName: 'events', queryName: 'default' }]);
+    const out = buildMainExample([
+      { tableName: 'events', queryName: 'default', requiredPartitions: [] },
+    ]);
     expect(out).toMatch(/main\(\)\.catch\(/);
   });
 
@@ -130,5 +145,22 @@ describe('buildMainExample', () => {
     const out = buildMainExample([]);
     expect(out).toContain(`createClient`);
     expect(out).toContain(`SELECT 1 AS ping`);
+  });
+
+  it('passes REPLACE_ME placeholders and adds a note for tables with required partitions', () => {
+    const out = buildMainExample([
+      {
+        tableName: 'events',
+        queryName: 'default',
+        requiredPartitions: [
+          { name: 'tenant_id', type: 'string' },
+          { name: 'dt', type: 'string' },
+        ],
+      },
+    ]);
+    expect(out).toContain(`Replace 'REPLACE_ME' with real values`);
+    expect(out).toContain(
+      `await eventsDefault(athena, { tenant_id: 'REPLACE_ME', dt: 'REPLACE_ME' });`,
+    );
   });
 });

@@ -6,6 +6,7 @@
 import {
   GlueClient,
   GetDatabasesCommand,
+  GetTableCommand,
   GetTablesCommand,
 } from '@aws-sdk/client-glue';
 import {
@@ -111,4 +112,47 @@ export function resolveRegion(cliRegion?: string): string | undefined {
     process.env.AWS_DEFAULT_REGION ||
     undefined
   );
+}
+
+export interface RequiredPartition {
+  /** Glue column name. */
+  name: string;
+  /** Glue column type, e.g. 'string', 'int'. Always string-coerced in SQL. */
+  type: string;
+}
+
+/**
+ * Return the partition columns that Athena requires to appear as static
+ * equality predicates in every WHERE clause. Only 'injected'-type partition
+ * projection columns qualify; other projection types (enum/integer/date)
+ * and non-projected partitions can be selected without a predicate.
+ *
+ * Source: Athena partition projection docs. The CONSTRAINT_VIOLATION
+ * error surfaces these columns by name at query time, so scaffolding
+ * with the right WHERE saves a round-trip for the user.
+ */
+export async function fetchRequiredPartitions(
+  region: string | undefined,
+  database: string,
+  tableName: string,
+): Promise<RequiredPartition[]> {
+  const glue = new GlueClient({ region });
+  const res = await glue.send(
+    new GetTableCommand({ DatabaseName: database, Name: tableName }),
+  );
+  const table = res.Table;
+  if (!table) return [];
+
+  const params = table.Parameters ?? {};
+  if (params['projection.enabled'] !== 'true') return [];
+
+  const out: RequiredPartition[] = [];
+  for (const key of table.PartitionKeys ?? []) {
+    if (!key.Name) continue;
+    const projectionType = params[`projection.${key.Name}.type`];
+    if (projectionType === 'injected') {
+      out.push({ name: key.Name, type: key.Type ?? 'string' });
+    }
+  }
+  return out;
 }
