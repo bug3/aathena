@@ -7,7 +7,7 @@ Type-safe AWS Athena client for TypeScript.
 - Scaffold a project from AWS with `npx aathena init`
 - Edit scaffolded SQL files with `{{variable}}` placeholders
 - Fully type-safe parameters and results, sourced from your AWS Glue catalog
-- Auto-detects injected-projection partitions (including those behind Presto/Trino views) and scaffolds the required WHERE predicates
+- Auto-detects injected-projection partitions (including those hidden behind Presto/Trino views) and scaffolds the required WHERE predicates
 - Run queries concurrently with `parallel()`, which respects Athena's per-account service quota
 
 ## 60-second onboarding
