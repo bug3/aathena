@@ -2768,6 +2768,19 @@ row.addr.city     // string, direct access just like the source data
 
 No `CAST()`, no extra views, no manual `JSON.parse()` needed.
 
+### Query statistics
+
+Every `QueryResult` includes a `statistics: QueryStatistics` block from `GetQueryExecution`. Pass `{ includeRuntimeStats: true }` to `client.query()` for input/output row counts via an extra `GetQueryRuntimeStatistics` call.
+
+```typescript
+const result = await athena.query<Row>(sql, { includeRuntimeStats: true });
+result.statistics.totalExecutionTimeInMillis;
+result.statistics.resultReused;
+result.statistics.runtime?.outputRows;
+```
+
+Fields: `engineExecutionTimeInMillis`, `totalExecutionTimeInMillis`, `queryQueueTimeInMillis`, `queryPlanningTimeInMillis`, `servicePreProcessingTimeInMillis`, `serviceProcessingTimeInMillis`, `dataScannedInBytes`, `dpuCount?`, `resultReused?`, `runtime?: { inputRows?, inputBytes?, outputRows?, outputBytes? }` (opt-in).
+
 ### Error classes
 
 - `AathenaError` - base error
@@ -2784,7 +2797,7 @@ No `CAST()`, no extra views, no manual `JSON.parse()` needed.
 - `schema` - parameter validation descriptors (re-exported from sql-render)
 - `defineConfig` - config helper
 - `AathenaError`, `QueryTimeoutError`, `QueryFailedError`, `QueryCancelledError`, `ColumnParseError` - error classes
-- Types: `AathenaConfig`, `QueryResult`, `ColumnMeta`
+- Types: `AathenaConfig`, `QueryResult`, `QueryStatistics`, `QueryRuntimeRows`, `QueryOptions`, `ColumnMeta`
 
 ### Exports (aathena/runtime)
 
@@ -3137,6 +3150,31 @@ Place `aathena.config.json` at the root of your project. The CLI and runtime wil
 | `query.timeout` | `300000` | Query timeout in ms (5 min) |
 | `query.pollingInterval` | `500` | Initial poll interval in ms |
 | `query.maxPollingInterval` | `5000` | Max poll interval in ms |
+
+## Query Statistics
+
+Every `QueryResult` includes a `statistics` block from Athena (cost tracking, queueing visibility, cache hits). Pass `{ includeRuntimeStats: true }` to additionally fetch input/output row counts via an extra `GetQueryRuntimeStatistics` API call.
+
+```typescript
+const result = await athena.query<Row>(sql, { includeRuntimeStats: true });
+result.statistics.totalExecutionTimeInMillis;   // 8128
+result.statistics.resultReused;                 // true
+result.statistics.runtime?.outputRows;          // 99
+```
+
+| Field | Notes |
+|---|---|
+| `engineExecutionTimeInMillis` | Engine execution time |
+| `totalExecutionTimeInMillis` | Wall time Athena took |
+| `queryQueueTimeInMillis` | Time spent waiting in the queue |
+| `queryPlanningTimeInMillis` | Planning + partition retrieval |
+| `servicePreProcessingTimeInMillis` | Preprocessing before engine |
+| `serviceProcessingTimeInMillis` | Result publication |
+| `dataScannedInBytes` | Drives query cost |
+| `dpuCount?` | Capacity-reservation workgroups only |
+| `resultReused?` | True if served from result cache |
+| `runtime?.inputRows` / `inputBytes` | Opt-in via `includeRuntimeStats` |
+| `runtime?.outputRows` / `outputBytes` | Opt-in via `includeRuntimeStats` |
 
 ## Error Handling
 
