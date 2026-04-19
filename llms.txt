@@ -30,7 +30,7 @@ aathena init [flags]
 
 Sequence:
 1. Reads AWS credentials, lists Glue databases + Athena workgroups, inherits workgroup output location when available
-2. Writes `aathena.config.json`, updates `.gitignore` (adds `generated/` and `node_modules/`)
+2. Writes `aathena.config.json`, updates `.gitignore` (adds `node_modules/` only; `generated/` is committed by default)
 3. Multi-selects tables to scaffold SQL for (falls back to `example_table` if none found)
 4. Probes each selection for injected-projection partitions, following Presto/Trino views to underlying tables
 5. Writes `tables/<db>/<table>/default.sql` with `LIMIT {{limit}}` and any required `-- @param` / `WHERE` predicates
@@ -58,7 +58,7 @@ Flags: `--name <query-name>` (default `default`), `--from-schema` (embed Glue co
 aathena generate
 ```
 
-Walks `tables/`, discovers SQL files, fetches schemas from Glue in parallel, produces `generated/types/` and `generated/queries/` plus a barrel `index.ts`. Surfaces a one-line info when query directory database differs from `config.database` and per-query binding is emitted.
+Walks `tables/`, discovers SQL files, fetches schemas from Glue in parallel, produces `generated/types/{database}/{table}.ts` (from the Glue schema) and `generated/queries/{database}/{table}/{query}.ts` (binds the SQL to its types) plus a barrel `generated/index.ts`. Surfaces a one-line info when query directory database differs from `config.database` and per-query binding is emitted.
 
 ## API
 
@@ -95,7 +95,7 @@ import { parallel } from 'aathena';
 const [users, orders] = await parallel(
   [
     () => getUsers(client, {}),
-    () => getOrders(client, { from: '2026-01-01' }),
+    () => getOrders(client, { from: '2022-02-02' }),
   ],
   { concurrency: 'auto', client },
 );

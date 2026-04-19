@@ -84,6 +84,8 @@ const athena = createClient();
 const result = await eventsDefault(athena, { status: 'active', limit: 99 });
 ```
 
+`createClient()` reads `aathena.config.json` automatically; pass an explicit config to override (`createClient({ region: 'us-east-1', database: 'analytics' })`) - useful in tests or when the project root isn't on disk.
+
 `client.query()` retries `StartQueryExecution` with exponential backoff + full jitter when Athena responds with `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED`. Up to 6 attempts. Applies to every call, generated or inline, including tasks dispatched by `parallel()`.
 
 ### `parallel()`
@@ -98,8 +100,8 @@ const athena = createClient();
 
 const [users, orders] = await parallel(
   [
-    () => getUsers(athena, { limit: 100 }),
-    () => getOrders(athena, { from: '2026-01-01' }),
+    () => getUsers(athena, { limit: 99 }),
+    () => getOrders(athena, { from: '2022-02-02' }),
   ],
   { concurrency: 'auto', client: athena },
 );
@@ -129,6 +131,7 @@ The live lookup uses `@aws-sdk/client-service-quotas`, an optional dependency lo
 
 ```typescript
 import {
+  AathenaError,
   QueryTimeoutError,
   QueryFailedError,
   QueryCancelledError,
@@ -140,12 +143,18 @@ try {
 } catch (err) {
   if (err instanceof QueryTimeoutError) {
     console.log(`Timed out after ${err.timeoutMs}ms: ${err.queryExecutionId}`);
-  }
-  if (err instanceof QueryFailedError) {
+  } else if (err instanceof QueryFailedError) {
     console.log(`Athena error: ${err.athenaErrorMessage}`);
+  } else if (err instanceof AathenaError) {
+    // QueryCancelledError, ColumnParseError, or anything else aathena threw
+    console.log(`aathena error (${err.name}): ${err.message}`);
+  } else {
+    throw err;
   }
 }
 ```
+
+All four specific classes extend `AathenaError`, so catching the base is enough when you don't need to discriminate.
 
 ## Advanced
 
@@ -229,7 +238,7 @@ result.statistics.runtime?.outputRows;          // 99
 Runs interactively by default, then:
 
 1. Reads AWS credentials, lists Glue databases and Athena workgroups, inherits the workgroup's default output location when available
-2. Writes `aathena.config.json` and adds `generated/` + `node_modules/` to `.gitignore`
+2. Writes `aathena.config.json` and adds `node_modules/` to `.gitignore` (the `generated/` directory is committed by default; delete it or add it to `.gitignore` yourself if you prefer to regenerate on every build)
 3. Lets you multi-select which tables to scaffold starter SQL for
 4. Probes each selected table (and any Presto/Trino view it points at) for injected-projection partitions that require WHERE predicates
 5. Writes `tables/{db}/{table}/default.sql` with `LIMIT {{limit}}`, plus the right `-- @param` / `WHERE` lines
@@ -264,7 +273,7 @@ Flags:
 
 ### `aathena generate`
 
-Re-runs codegen: fetches Glue schemas for every SQL file under `tables/` in parallel and produces `generated/types/`, `generated/queries/`, and a barrel `generated/index.ts`. Run it after editing SQL files or when upstream schemas change. Surfaces a one-line info when a query directory's database differs from `config.database` and a per-query binding is emitted.
+Re-runs codegen: fetches Glue schemas for every SQL file under `tables/` in parallel and produces `generated/types/{database}/{table}.ts`, `generated/queries/{database}/{table}/{query}.ts`, and a barrel `generated/index.ts`. Run it after editing SQL files or when upstream schemas change. Surfaces a one-line info when a query directory's database differs from `config.database` and a per-query binding is emitted.
 
 ## Reference
 
@@ -323,6 +332,8 @@ Glue column types map directly to TypeScript:
 
 Arrays, maps, and structs parse recursively at runtime; no `CAST()` or manual `JSON.parse` needed.
 
+Regular columns are nullable (`T | null`); partition keys are always non-null.
+
 ### `@param` types
 
 | Annotation | TypeScript | Validation |
@@ -350,7 +361,7 @@ So a scaffolded `tables/sampledb/events/default.sql` shows up as:
 
 ```typescript
 import { eventsDefault } from './generated';
-const result = await eventsDefault(athena, { limit: 50 });
+const result = await eventsDefault(athena, { limit: 33 });
 ```
 
 ### Directory structure
@@ -358,12 +369,21 @@ const result = await eventsDefault(athena, { limit: 50 });
 ```
 project/
 ├── aathena.config.json        # project root marker, written by 'init'
-├── tables/                    # SQL files
+├── tables/                    # SQL files you edit
 │   └── sampledb/              # database
 │       └── events/            # table
 │           ├── default.sql
 │           └── daily.sql
-├── generated/                 # codegen output (gitignored)
+├── generated/                 # codegen output, committed by default
+│   ├── index.ts               # barrel re-exporting every query under a JS-safe name
+│   ├── types/                 # one file per table, mirroring the Glue schema
+│   │   └── sampledb/
+│   │       └── events.ts
+│   └── queries/               # one file per SQL, binding it to its types
+│       └── sampledb/
+│           └── events/
+│               ├── default.ts
+│               └── daily.ts
 └── src/
     └── main.ts                # runnable example, written by 'init'
 ```

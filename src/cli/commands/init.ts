@@ -375,7 +375,7 @@ export function buildConfig(input: BuildConfigInput): AathenaConfig {
 
 export function mergeGitignore(existing: string): string {
   const entries = new Set(existing.split('\n').map((l) => l.trim()).filter(Boolean));
-  const toAdd = ['generated/', 'node_modules/'].filter((e) => !entries.has(e));
+  const toAdd = ['node_modules/'].filter((e) => !entries.has(e));
   if (toAdd.length === 0) return existing;
 
   const base = existing.trimEnd();

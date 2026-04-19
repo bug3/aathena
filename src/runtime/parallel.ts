@@ -61,7 +61,7 @@ type SettledThunkTuple<T extends readonly Thunk<unknown>[]> = {
  *   const [users, orders] = await parallel(
  *     [
  *       () => getUsers(client, {}),
- *       () => getOrders(client, { from: '2026-01-01' }),
+ *       () => getOrders(client, { from: '2022-02-02' }),
  *     ],
  *     { concurrency: 'auto', client },
  *   );

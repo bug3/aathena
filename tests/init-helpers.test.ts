@@ -37,23 +37,27 @@ describe('buildConfig', () => {
 });
 
 describe('mergeGitignore', () => {
-  it('adds generated/ and node_modules/ when missing', () => {
+  it('adds node_modules/ when missing', () => {
     const out = mergeGitignore('');
-    expect(out).toContain('generated/');
     expect(out).toContain('node_modules/');
     expect(out).toContain('# aathena');
   });
 
-  it('skips already-present entries', () => {
-    const src = 'node_modules/\ndist/\n';
+  it('does not add generated/', () => {
+    const out = mergeGitignore('');
+    expect(out).not.toContain('generated/');
+  });
+
+  it('appends node_modules/ when other entries exist but node_modules/ is missing', () => {
+    const src = 'dist/\n';
     const out = mergeGitignore(src);
-    expect(out.endsWith('generated/\n')).toBe(true);
+    expect(out.endsWith('node_modules/\n')).toBe(true);
     const occurrences = out.match(/node_modules\//g) ?? [];
     expect(occurrences.length).toBe(1);
   });
 
-  it('returns input unchanged when everything is already present', () => {
-    const src = 'node_modules/\ngenerated/\n';
+  it('returns input unchanged when node_modules/ is already present', () => {
+    const src = 'node_modules/\n';
     expect(mergeGitignore(src)).toBe(src);
   });
 
