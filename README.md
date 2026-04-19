@@ -217,6 +217,7 @@ Place `aathena.config.json` at the root of your project. The CLI and runtime wil
 | `query.timeout` | `300000` | Query timeout in ms (5 min) |
 | `query.pollingInterval` | `500` | Initial poll interval in ms |
 | `query.maxPollingInterval` | `5000` | Max poll interval in ms |
+| `maxConcurrency` | - | Override for `parallel({ concurrency: 'auto' })` when Service Quotas is unreachable |
 
 ## Query Statistics
 
@@ -242,6 +243,54 @@ result.statistics.runtime?.outputRows;          // 99
 | `resultReused?` | True if served from result cache |
 | `runtime?.inputRows` / `inputBytes` | Opt-in via `includeRuntimeStats` |
 | `runtime?.outputRows` / `outputBytes` | Opt-in via `includeRuntimeStats` |
+
+## Running Queries in Parallel
+
+`parallel()` runs multiple queries concurrently with a bounded cap that respects Athena's per-account service quota on active DML/DDL queries. Tasks are passed as thunks (`() => query(...)`) so the helper can gate when each query actually starts.
+
+```typescript
+import { createClient, parallel } from 'aathena';
+import { getUsers, getOrders } from './generated';
+
+const athena = createClient();
+
+const [users, orders] = await parallel(
+  [
+    () => getUsers(athena, { limit: 100 }),
+    () => getOrders(athena, { from: '2026-01-01' }),
+  ],
+  { concurrency: 'auto', client: athena },
+);
+
+users.rows[0].id;      // fully typed per query
+orders.rows[0].total;
+```
+
+### Concurrency resolution
+
+`concurrency` accepts a number or `'auto'`. With `'auto'`, the cap is resolved in this order:
+
+1. `AathenaConfig.maxConcurrency` if set
+2. Live value from AWS Service Quotas (quota `L-D405C694` for DML, `L-FCDFE414` for DDL)
+3. A conservative region-aware fallback (50% of the AWS-documented default, clamped to `[5, 25]`)
+
+The live lookup uses `@aws-sdk/client-service-quotas` (declared as an optional dependency, loaded via dynamic import). It requires the `servicequotas:GetServiceQuota` IAM permission. When the permission is missing the call fails silently and the fallback is used.
+
+`reserveHeadroom` (default `1`) is subtracted from the resolved quota to leave room for other workloads.
+
+### Options
+
+| Option | Default | Description |
+|---|---|---|
+| `concurrency` | `5` | `number` or `'auto'` |
+| `client` | - | Required when `concurrency: 'auto'` and `maxConcurrency` is unset |
+| `kind` | `'dml'` | `'dml'` or `'ddl'`, selects which quota to probe |
+| `reserveHeadroom` | `1` | Subtracted from the resolved quota |
+| `mode` | `'all'` | `'all'` rejects on first failure; `'allSettled'` returns per-task settlements |
+
+### Retry on concurrent-limit throttling
+
+`client.query()` (and anything built on it) retries `StartQueryExecution` automatically when Athena responds with `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED`. Backoff is exponential with full jitter, up to 6 attempts. This protects against transient spikes and quota changes even when `parallel()` is not used.
 
 ## Error Handling
 
