@@ -13,6 +13,7 @@ import {
   fetchRequiredPartitions,
   type RequiredPartition,
 } from '../aws-discovery';
+import { AWS_REGIONS, CUSTOM_REGION_SENTINEL } from '../aws-regions';
 
 export interface InitFlags {
   force?: boolean;
@@ -53,16 +54,40 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
   const region = resolveRegion(flags.region);
   let effectiveRegion = region;
   if (!effectiveRegion) {
-    const answer = await p.text({
-      message: 'AWS region?',
-      placeholder: 'us-east-1',
-      validate: (v) => (v ? undefined : 'Region is required'),
+    const choice = await p.select({
+      message: 'AWS region',
+      initialValue: 'us-east-1',
+      options: [
+        ...AWS_REGIONS.map((r) => ({
+          value: r.code,
+          label: r.code,
+          hint: r.label,
+        })),
+        {
+          value: CUSTOM_REGION_SENTINEL,
+          label: 'Custom...',
+          hint: 'Enter a region code manually',
+        },
+      ],
     });
-    if (p.isCancel(answer)) {
+    if (p.isCancel(choice)) {
       p.cancel('Cancelled.');
       return 1;
     }
-    effectiveRegion = answer;
+    if (choice === CUSTOM_REGION_SENTINEL) {
+      const typed = await p.text({
+        message: 'Region code',
+        placeholder: 'us-east-1',
+        validate: (v) => (v ? undefined : 'Region is required'),
+      });
+      if (p.isCancel(typed)) {
+        p.cancel('Cancelled.');
+        return 1;
+      }
+      effectiveRegion = typed;
+    } else {
+      effectiveRegion = choice;
+    }
   }
 
   // Database

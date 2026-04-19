@@ -27,7 +27,7 @@ npm install aathena
 npx aathena init
 ```
 
-`init` walks you through a complete setup: picks a Glue database, lets you multi-select tables, probes each for partition requirements (following Presto/Trino views to their underlying tables), auto-runs `generate`, and writes a runnable `src/main.ts` that imports and invokes every scaffolded query. See [CLI Reference](#cli-reference) for the full sequence and flags.
+`init` walks you through a complete setup: picks an AWS region, picks a Glue database, lets you multi-select tables, probes each for partition requirements (following Presto/Trino views to their underlying tables), auto-runs `generate`, and writes a runnable `src/main.ts` that imports and invokes every scaffolded query. See [CLI Reference](#cli-reference) for the full sequence and flags.
 
 ### 3. Run it
 
@@ -237,7 +237,7 @@ result.statistics.runtime?.outputRows;          // 99
 
 Runs interactively by default, then:
 
-1. Reads AWS credentials, lists Glue databases and Athena workgroups, inherits the workgroup's default output location when available
+1. Resolves the AWS region from `--region`, the `AWS_REGION` / `AWS_DEFAULT_REGION` env vars, or a select prompt (common commercial regions plus a Custom fallback for typing one in); lists Glue databases and Athena workgroups; inherits the workgroup's default output location when available
 2. Writes `aathena.config.json` and adds `node_modules/` to `.gitignore` (the `generated/` directory is committed by default; delete it or add it to `.gitignore` yourself if you prefer to regenerate on every build)
 3. Lets you multi-select which tables to scaffold starter SQL for
 4. Probes each selected table (and any Presto/Trino view it points at) for injected-projection partitions that require WHERE predicates

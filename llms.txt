@@ -29,7 +29,7 @@ aathena init [flags]
 ```
 
 Sequence:
-1. Reads AWS credentials, lists Glue databases + Athena workgroups, inherits workgroup output location when available
+1. Resolves the AWS region from `--region`, `AWS_REGION` / `AWS_DEFAULT_REGION`, or an interactive select prompt (hardcoded list of commercial regions plus a `Custom...` option that falls through to a free-text prompt); lists Glue databases + Athena workgroups; inherits workgroup output location when available
 2. Writes `aathena.config.json`, updates `.gitignore` (adds `node_modules/` only; `generated/` is committed by default)
 3. Multi-selects tables to scaffold SQL for (falls back to `example_table` if none found)
 4. Probes each selection for injected-projection partitions, following Presto/Trino views to underlying tables
