@@ -31,7 +31,7 @@ const PARAM_ANNOTATION_REGEX =
  * Format: -- @param name type
  * Examples:
  *   -- @param status enum('active','pending')
- *   -- @param limit positiveInt
+ *   -- @param rowLimit positiveInt
  *   -- @param startDate isoDate
  */
 function parseAnnotations(sql: string): Map<string, ParsedParam> {

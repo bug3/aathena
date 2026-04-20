@@ -20,7 +20,7 @@ const athena = createClient();
 
 const events = await byStatus(athena, {
   status: 'active',  // string (inferred from quoted context)
-  limit: 99,         // number (inferred from LIMIT)
+  rowLimit: 99,      // number (inferred from LIMIT)
 });
 
 for (const row of events.rows) {
@@ -36,7 +36,7 @@ const filtered = await byDateRange(athena, {
   status: 'active',             // only 'active' | 'pending' | 'done'
   startDate: '2022-02-22',     // validated as YYYY-MM-DD at runtime
   endDate: '2022-12-22',       // validated as YYYY-MM-DD at runtime
-  limit: 99,                  // validated as positive integer at runtime
+  rowLimit: 99,               // validated as positive integer at runtime
 });
 
 console.log(`Found ${filtered.rows.length} events`);
@@ -52,7 +52,7 @@ for (const row of revenue.rows) {
 // --- Error handling ---
 
 try {
-  await byStatus(athena, { status: 'active', limit: 10 });
+  await byStatus(athena, { status: 'active', rowLimit: 10 });
 } catch (err) {
   if (err instanceof QueryTimeoutError) {
     console.error(`Query timed out after ${err.timeoutMs}ms`);
@@ -68,7 +68,7 @@ try {
 
 const products = await byCategory(athena, {
   category: 'electronics',
-  limit: 10,
+  rowLimit: 10,
 });
 
 for (const row of products.rows) {

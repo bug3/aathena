@@ -49,7 +49,7 @@ describe('buildQuerySql', () => {
   it('writes a minimal starter query without columns', () => {
     const sql = buildQuerySql('events');
     expect(sql).toContain('FROM events');
-    expect(sql).toContain('LIMIT {{limit}}');
+    expect(sql).toContain('LIMIT {{rowLimit}}');
     expect(sql).not.toContain('-- Columns:');
   });
 

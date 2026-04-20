@@ -42,7 +42,7 @@ Every row is typed 1:1 against your Glue schema. Scalars land as native TypeScri
 ```typescript
 // Glue: event_id bigint, created_at timestamp, tags array<varchar>, metadata map<string,int>, address struct<city:string>, items array<struct<qty:int>>
 
-const result = await getEvents(athena, { limit: 33 });
+const result = await getEvents(athena, { rowLimit: 33 });
 const row = result.rows[0];
 
 row.eventId;         // bigint
@@ -59,7 +59,7 @@ Your scaffolded queries live under `tables/{database}/{table}/{query-name}.sql`.
 
 ```sql
 WHERE status = '{{status}}'    -- quoted       -> string
-LIMIT {{limit}}                -- LIMIT/OFFSET -> positiveInt
+LIMIT {{rowLimit}}             -- LIMIT/OFFSET -> positiveInt
 WHERE price >= {{minPrice}}    -- comparison   -> number
 ```
 
@@ -67,13 +67,13 @@ For stricter validation, annotate with `-- @param`:
 
 ```sql
 -- @param status enum('active','pending','done')
--- @param limit positiveInt
+-- @param rowLimit positiveInt
 -- @param startDate isoDate
 SELECT *
 FROM events
 WHERE status = '{{status}}'
   AND created_at >= '{{startDate}}'
-LIMIT {{limit}}
+LIMIT {{rowLimit}}
 ```
 
 Generates:
@@ -81,7 +81,7 @@ Generates:
 ```typescript
 interface DefaultParams {
   status: 'active' | 'pending' | 'done';
-  limit: number;                  // validated > 0
+  rowLimit: number;               // validated > 0
   startDate: string;              // validated YYYY-MM-DD
 }
 ```
@@ -97,7 +97,7 @@ import { createClient } from 'aathena';
 import { eventsDefault } from './generated';
 
 const athena = createClient();
-const result = await eventsDefault(athena, { status: 'active', limit: 99 });
+const result = await eventsDefault(athena, { status: 'active', rowLimit: 99 });
 ```
 
 `createClient()` reads `aathena.config.json` automatically; pass an explicit config to override (`createClient({ region: 'us-east-1', database: 'analytics' })`) - useful in tests or when the project root isn't on disk.
@@ -116,7 +116,7 @@ const athena = createClient();
 
 const [users, orders] = await parallel(
   [
-    () => getUsers(athena, { limit: 99 }),
+    () => getUsers(athena, { rowLimit: 99 }),
     () => getOrders(athena, { from: '2022-02-02' }),
   ],
   { concurrency: 'auto', client: athena },
@@ -155,7 +155,7 @@ import {
 } from 'aathena';
 
 try {
-  const result = await eventsDefault(athena, { status: 'active', limit: 99 });
+  const result = await eventsDefault(athena, { status: 'active', rowLimit: 99 });
 } catch (err) {
   if (err instanceof QueryTimeoutError) {
     console.log(`Timed out after ${err.timeoutMs}ms: ${err.queryExecutionId}`);
@@ -197,7 +197,7 @@ Example output for a view over a partitioned table:
 SELECT *
 FROM events
 WHERE tenant_id = '{{tenant_id}}'
-LIMIT {{limit}}
+LIMIT {{rowLimit}}
 ```
 
 ### Cross-database queries
@@ -257,7 +257,7 @@ Runs interactively by default, then:
 2. Writes `aathena.config.json` and adds `node_modules/` to `.gitignore` (the `generated/` directory is committed by default; delete it or add it to `.gitignore` yourself if you prefer to regenerate on every build)
 3. Lets you multi-select which tables to scaffold starter SQL for
 4. Probes each selected table (and any Presto/Trino view it points at) for injected-projection partitions that require WHERE predicates
-5. Writes `tables/{db}/{table}/default.sql` with `LIMIT {{limit}}`, plus the right `-- @param` / `WHERE` lines
+5. Writes `tables/{db}/{table}/default.sql` with `LIMIT {{rowLimit}}`, plus the right `-- @param` / `WHERE` lines
 6. Runs `generate` to produce typed query functions under `generated/`
 7. Writes a runnable `src/main.ts` that imports and calls every scaffolded query (single call for 1 table, `parallel()` demo for 2+)
 
@@ -378,7 +378,7 @@ So a scaffolded `tables/sampledb/events/default.sql` shows up as:
 
 ```typescript
 import { eventsDefault } from './generated';
-const result = await eventsDefault(athena, { limit: 33 });
+const result = await eventsDefault(athena, { rowLimit: 33 });
 ```
 
 ### Directory structure

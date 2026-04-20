@@ -6,4 +6,4 @@
 SELECT product_id, name, tags, attributes, shipping_address
 FROM products
 WHERE category = '{{category}}'
-LIMIT {{limit}}
+LIMIT {{rowLimit}}

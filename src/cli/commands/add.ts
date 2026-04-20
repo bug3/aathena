@@ -229,7 +229,7 @@ export function buildQuerySql(
   }
   // LIMIT as a {{placeholder}}: demonstrates the template syntax and lets
   // the caller tune the row count at invocation time.
-  parts.push(`LIMIT {{limit}}`);
+  parts.push(`LIMIT {{rowLimit}}`);
   parts.push(``);
   return parts.join('\n');
 }

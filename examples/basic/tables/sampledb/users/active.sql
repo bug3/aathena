@@ -8,4 +8,4 @@ FROM users
 WHERE is_active = true
   AND age >= {{minAge}}
 ORDER BY username
-LIMIT {{limit}}
+LIMIT {{rowLimit}}

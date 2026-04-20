@@ -4,12 +4,12 @@ import { parseSQL } from '../src/codegen/sql-parser';
 describe('parseSQL', () => {
   describe('placeholder extraction', () => {
     it('extracts simple placeholders', () => {
-      const sql = `SELECT * FROM events WHERE status = '{{status}}' LIMIT {{limit}}`;
+      const sql = `SELECT * FROM events WHERE status = '{{status}}' LIMIT {{rowLimit}}`;
       const result = parseSQL(sql);
 
       expect(result.params).toHaveLength(2);
       expect(result.params[0].name).toBe('status');
-      expect(result.params[1].name).toBe('limit');
+      expect(result.params[1].name).toBe('rowLimit');
     });
 
     it('deduplicates repeated placeholders', () => {
@@ -38,7 +38,7 @@ describe('parseSQL', () => {
     });
 
     it('infers number for LIMIT', () => {
-      const sql = `SELECT * FROM events LIMIT {{limit}}`;
+      const sql = `SELECT * FROM events LIMIT {{rowLimit}}`;
       const result = parseSQL(sql);
 
       expect(result.params[0].type).toBe('number');
@@ -88,8 +88,8 @@ SELECT * FROM events WHERE status = '{{status}}'`;
     });
 
     it('parses positiveInt annotation', () => {
-      const sql = `-- @param limit positiveInt
-SELECT * FROM events LIMIT {{limit}}`;
+      const sql = `-- @param rowLimit positiveInt
+SELECT * FROM events LIMIT {{rowLimit}}`;
       const result = parseSQL(sql);
 
       expect(result.params[0].type).toBe('number');
@@ -107,8 +107,8 @@ SELECT * FROM events WHERE created_at >= '{{startDate}}'`;
     });
 
     it('annotation overrides context inference', () => {
-      const sql = `-- @param limit number
-SELECT * FROM events LIMIT {{limit}}`;
+      const sql = `-- @param rowLimit number
+SELECT * FROM events LIMIT {{rowLimit}}`;
       const result = parseSQL(sql);
 
       // Annotation says 'number', context would also say number/positiveInt
@@ -119,13 +119,13 @@ SELECT * FROM events LIMIT {{limit}}`;
 
     it('mixes annotations with inferred params', () => {
       const sql = `-- @param status enum('active','pending')
-SELECT * FROM events WHERE status = '{{status}}' LIMIT {{limit}}`;
+SELECT * FROM events WHERE status = '{{status}}' LIMIT {{rowLimit}}`;
       const result = parseSQL(sql);
 
       expect(result.params[0].name).toBe('status');
       expect(result.params[0].inferred).toBe(false);
 
-      expect(result.params[1].name).toBe('limit');
+      expect(result.params[1].name).toBe('rowLimit');
       expect(result.params[1].inferred).toBe(true);
       expect(result.params[1].type).toBe('number');
     });

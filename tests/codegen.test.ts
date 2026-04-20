@@ -37,7 +37,7 @@ describe('generateTypeFile', () => {
 
 describe('generateQueryFile', () => {
   it('generates query file with inferred params', () => {
-    const sql = `SELECT * FROM events WHERE status = '{{status}}' LIMIT {{limit}}`;
+    const sql = `SELECT * FROM events WHERE status = '{{status}}' LIMIT {{rowLimit}}`;
     const parsed = parseSQL(sql);
 
     const output = generateQueryFile({
@@ -53,7 +53,7 @@ describe('generateQueryFile', () => {
     expect(output).toContain("import type { Events } from '../../types/sampledb/events'");
     expect(output).toContain('export interface ProductParams {');
     expect(output).toContain('status: string;');
-    expect(output).toContain('limit: number;');
+    expect(output).toContain('rowLimit: number;');
     expect(output).toContain('export const product = createQuery');
     expect(output).toContain('tables/sampledb/events/product.sql');
     expect(output).not.toContain('database:');
@@ -61,8 +61,8 @@ describe('generateQueryFile', () => {
 
   it('generates query file with @param annotations and schema', () => {
     const sql = `-- @param status enum('active','pending')
--- @param limit positiveInt
-SELECT * FROM events WHERE status = '{{status}}' LIMIT {{limit}}`;
+-- @param rowLimit positiveInt
+SELECT * FROM events WHERE status = '{{status}}' LIMIT {{rowLimit}}`;
     const parsed = parseSQL(sql);
 
     const output = generateQueryFile({

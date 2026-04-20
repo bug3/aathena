@@ -17,7 +17,7 @@ const athena = createClient();
 const result = await topPages(athena, {
   startDate: '2024-01-01',
   endDate: '2024-12-31',
-  limit: 20,
+  rowLimit: 20,
 });
 
 for (const row of result.rows) {

@@ -87,7 +87,7 @@ describe('buildSampleSql', () => {
     expect(file.path).toBe('tables/sampledb/events/default.sql');
     expect(file.queryName).toBe('default');
     expect(file.contents).toContain('FROM events');
-    expect(file.contents).toContain('LIMIT {{limit}}');
+    expect(file.contents).toContain('LIMIT {{rowLimit}}');
   });
 
   it('falls back to example_table when no table is provided', () => {
@@ -98,7 +98,7 @@ describe('buildSampleSql', () => {
 
   it('does not embed {{...}} in comment lines', () => {
     // sql-render treats any {{token}} in the file as a real param, including
-    // ones that only appear in example comments. LIMIT {{limit}} in the body
+    // ones that only appear in example comments. LIMIT {{rowLimit}} in the body
     // is intentional; comments must stay clean.
     const file = buildSampleSql('sampledb', 'events');
     const commentLines = file.contents
@@ -151,7 +151,7 @@ describe('buildMainExample', () => {
     expect(out).toContain(`import { createClient } from 'aathena';`);
     expect(out).toContain(`import { eventsDefault } from '../generated';`);
     expect(out).toContain(
-      'const events = await eventsDefault(athena, { limit: 33 });',
+      'const events = await eventsDefault(athena, { rowLimit: 33 });',
     );
     expect(out).not.toContain('parallel');
   });
@@ -164,8 +164,8 @@ describe('buildMainExample', () => {
     expect(out).toContain(`import { createClient, parallel } from 'aathena';`);
     expect(out).toContain(`import { eventsDefault, ordersDefault } from '../generated';`);
     expect(out).toContain('const [events, orders] = await parallel(');
-    expect(out).toContain(`() => eventsDefault(athena, { limit: 33 }),`);
-    expect(out).toContain(`() => ordersDefault(athena, { limit: 33 }),`);
+    expect(out).toContain(`() => eventsDefault(athena, { rowLimit: 33 }),`);
+    expect(out).toContain(`() => ordersDefault(athena, { rowLimit: 33 }),`);
     expect(out).toContain(`{ concurrency: 'auto', client: athena }`);
   });
 
@@ -191,7 +191,7 @@ describe('buildMainExample', () => {
     expect(out).toContain(`SELECT 1 AS ping`);
   });
 
-  it('passes REPLACE_ME placeholders alongside limit for tables with required partitions', () => {
+  it('passes REPLACE_ME placeholders alongside rowLimit for tables with required partitions', () => {
     const out = buildMainExample([
       {
         tableName: 'events',
@@ -204,7 +204,7 @@ describe('buildMainExample', () => {
     ]);
     expect(out).toContain(`Replace 'REPLACE_ME' with real values`);
     expect(out).toContain(
-      `await eventsDefault(athena, { tenant_id: 'REPLACE_ME', dt: 'REPLACE_ME', limit: 33 });`,
+      `await eventsDefault(athena, { tenant_id: 'REPLACE_ME', dt: 'REPLACE_ME', rowLimit: 33 });`,
     );
   });
 });
