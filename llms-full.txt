@@ -5984,7 +5984,7 @@ publish:
 ````json
 {
   "name": "aathena",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Type-safe AWS Athena client for TypeScript",
   "author": "bug3",
   "license": "MIT",
