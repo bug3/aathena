@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import * as p from '@clack/prompts';
 import type { AathenaConfig } from '../../runtime/types';
+import { findProjectRoot } from '../../runtime/config';
 import { fetchTableSchema, type GlueColumn } from '../../codegen/glue-fetcher';
 import { generate } from '../../codegen/generate';
 import {
@@ -24,13 +25,17 @@ export async function runAdd(
   target: string | undefined,
   flags: AddFlags,
 ): Promise<number> {
-  const configPath = resolve(cwd, CONFIG_FILE);
-  if (!existsSync(configPath)) {
+  let projectRoot: string;
+  try {
+    projectRoot = findProjectRoot(cwd);
+  } catch {
     p.log.error(
-      `No ${CONFIG_FILE} found at ${cwd}. Run 'aathena init' first.`,
+      `No ${CONFIG_FILE} found in ${cwd} or any parent directory. Run 'aathena init' first.`,
     );
     return 1;
   }
+  const configPath = resolve(projectRoot, CONFIG_FILE);
+
   if (!target) {
     p.log.error('Usage: aathena add <table> [--name <query-name>] [--from-schema]');
     return 1;
@@ -43,6 +48,8 @@ export async function runAdd(
     return 1;
   }
 
+  const tablesDirRel = normalizeRelativeDir(config.tablesDir ?? 'tables');
+
   p.intro('aathena add');
 
   const { database, tableName } = parsed;
@@ -54,7 +61,7 @@ export async function runAdd(
         {
           value: 'bind',
           label: 'Scaffold under this database with per-query binding',
-          hint: `tables/${database}/${tableName}/, runtime uses ${database}`,
+          hint: `${tablesDirRel}/${database}/${tableName}/, runtime uses ${database}`,
         },
         {
           value: 'switch',
@@ -78,8 +85,8 @@ export async function runAdd(
   }
 
   const queryName = flags.name ?? 'default';
-  const sqlPath = `tables/${database}/${tableName}/${queryName}.sql`;
-  const absPath = resolve(cwd, sqlPath);
+  const sqlPath = `${tablesDirRel}/${database}/${tableName}/${queryName}.sql`;
+  const absPath = resolve(projectRoot, sqlPath);
 
   if (existsSync(absPath) && !flags.force) {
     p.log.error(`${sqlPath} already exists. Use --force or --name <other>.`);
@@ -137,7 +144,7 @@ export async function runAdd(
   const spin = p.spinner();
   spin.start('Running generate');
   try {
-    const result = await generate(config, cwd);
+    const result = await generate(config, projectRoot);
     spin.stop(
       `Generated ${result.typesGenerated} type(s), ${result.queriesGenerated} query file(s)`,
     );
@@ -230,4 +237,14 @@ export function buildQuerySql(
 function formatAwsError(err: unknown): string {
   if (err instanceof Error) return `${err.name}: ${err.message}`;
   return String(err);
+}
+
+/**
+ * Normalize a config-derived directory path for use in a POSIX-style relative
+ * path. Strips a leading `./` and any trailing slashes so `{dir}/db/table/...`
+ * concatenation produces a tidy path regardless of how the user spelled the
+ * value in aathena.config.json.
+ */
+export function normalizeRelativeDir(dir: string): string {
+  return dir.replace(/^\.\//, '').replace(/\/+$/, '');
 }

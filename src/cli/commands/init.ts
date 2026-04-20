@@ -55,6 +55,19 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
     return 1;
   }
 
+  // Preserve tablesDir/outDir from an existing config on --force rewrites so
+  // a flag-less re-init does not silently drop them. Explicit flags still win.
+  let existingConfig: Partial<AathenaConfig> = {};
+  if (existsSync(configPath)) {
+    try {
+      existingConfig = JSON.parse(readFileSync(configPath, 'utf-8')) as AathenaConfig;
+    } catch {
+      // Ignore malformed existing config; init will overwrite it cleanly.
+    }
+  }
+  const effectiveTablesDir = flags.tablesDir ?? existingConfig.tablesDir;
+  const effectiveOutDir = flags.outDir ?? existingConfig.outDir;
+
   p.intro('aathena init');
 
   const region = resolveRegion(flags.region);
@@ -207,8 +220,8 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
     database,
     workgroup,
     outputLocation,
-    tablesDir: flags.tablesDir,
-    outDir: flags.outDir,
+    tablesDir: effectiveTablesDir,
+    outDir: effectiveOutDir,
   });
   writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
   p.log.success(`Wrote ${CONFIG_FILE}`);
@@ -239,7 +252,7 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
         table,
         info.partitions,
         info.notes,
-        flags.tablesDir,
+        effectiveTablesDir,
       );
       const absPath = resolve(cwd, sqlPath);
       mkdirSync(dirname(absPath), { recursive: true });
@@ -298,7 +311,7 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
       const importPath = computeGeneratedImportPath(
         cwd,
         examplePathRel,
-        flags.outDir ?? 'generated',
+        effectiveOutDir ?? 'generated',
       );
       writeFileSync(mainPath, buildMainExample(scaffolded, importPath), 'utf-8');
       p.log.success(existed ? `Rewrote ${examplePathRel}` : `Wrote ${examplePathRel}`);
@@ -309,7 +322,7 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
   const nextSteps = wroteMain
     ? `Next: npx tsx ${examplePathRel}`
     : hasSelection && !flags.noGenerate
-      ? `Next: import from ./${flags.outDir ?? 'generated'} and call your queries.`
+      ? `Next: import from ./${effectiveOutDir ?? 'generated'} and call your queries.`
       : `Next: run 'npx aathena generate' to produce typed query functions.`;
   p.outro(nextSteps);
   return 0;

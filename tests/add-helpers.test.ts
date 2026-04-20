@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTarget, buildQuerySql } from '../src/cli/commands/add';
+import { parseTarget, buildQuerySql, normalizeRelativeDir } from '../src/cli/commands/add';
 import type { GlueColumn } from '../src/codegen/glue-fetcher';
 
 describe('parseTarget', () => {
@@ -87,5 +87,26 @@ describe('buildQuerySql', () => {
     ]);
     expect(sql).toContain('-- @param tenant_id string');
     expect(sql).toContain(`WHERE tenant_id = '{{tenant_id}}'`);
+  });
+});
+
+describe('normalizeRelativeDir', () => {
+  it('leaves a bare directory name untouched', () => {
+    expect(normalizeRelativeDir('tables')).toBe('tables');
+    expect(normalizeRelativeDir('sql')).toBe('sql');
+  });
+
+  it('strips leading ./', () => {
+    expect(normalizeRelativeDir('./tables')).toBe('tables');
+    expect(normalizeRelativeDir('./sql/athena')).toBe('sql/athena');
+  });
+
+  it('strips trailing slashes', () => {
+    expect(normalizeRelativeDir('tables/')).toBe('tables');
+    expect(normalizeRelativeDir('tables///')).toBe('tables');
+  });
+
+  it('strips both leading ./ and trailing slashes', () => {
+    expect(normalizeRelativeDir('./tables/')).toBe('tables');
   });
 });
