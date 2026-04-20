@@ -193,6 +193,7 @@ Example output for a view over a partitioned table:
 -- See README for placeholder and parameter syntax.
 -- View 'analytics.events' traced to: analytics.events_raw
 -- @param tenant_id string
+-- @param rowLimit positiveInt
 
 SELECT *
 FROM events

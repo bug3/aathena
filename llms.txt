@@ -35,7 +35,7 @@ Sequence:
 2. Writes `aathena.config.json`, updates `.gitignore` (adds `node_modules/` only; `generated/` is committed by default)
 3. Multi-selects tables to scaffold SQL for (falls back to `example_table` if none found)
 4. Probes each selection for injected-projection partitions, following Presto/Trino views to underlying tables
-5. Writes `tables/<db>/<table>/default.sql` with `LIMIT {{rowLimit}}` and any required `-- @param` / `WHERE` predicates
+5. Writes `tables/<db>/<table>/default.sql` with `LIMIT {{rowLimit}}`, a `-- @param rowLimit positiveInt` annotation, and any required partition `-- @param` / `WHERE` predicates
 6. Auto-runs `generate`
 7. Writes a runnable `src/main.ts` demonstrating how to call the generated queries (single call for 1 table, `parallel()` for 2+)
 
@@ -221,7 +221,7 @@ Same as above. Separate entry point used by generated code.
 ## Key details
 
 - Built on `@aws-sdk/client-athena`, `@aws-sdk/client-glue`, and `sql-render`; CLI uses `@clack/prompts`
-- Scaffolded SQL uses `LIMIT {{rowLimit}}` (inferred as `positiveInt`); `src/main.ts` passes `rowLimit: 33` as a runnable default
+- Scaffolded SQL uses `LIMIT {{rowLimit}}` with an explicit `-- @param rowLimit positiveInt` annotation (doubles as an example of the annotation syntax); `src/main.ts` passes `rowLimit: 33` as a runnable default
 - Query lifecycle: start query (with retry on concurrent-limit throttling), poll with exponential backoff, paginate results, parse rows
 - Nullable columns: regular Glue columns are nullable (`T | null`), partition keys are NOT NULL
 - Codegen fetches schemas in parallel via `Promise.allSettled`, fails fast on Glue errors

@@ -218,6 +218,10 @@ export function buildQuerySql(
   for (const part of requiredPartitions) {
     parts.push(`-- @param ${part.name} string`);
   }
+  // Explicit @param for the scaffolded LIMIT doubles as an annotation
+  // example; positiveInt validates as integer > 0 at runtime on top of
+  // the TS `number` type.
+  parts.push(`-- @param rowLimit positiveInt`);
   parts.push(``);
   parts.push(`SELECT *`);
   parts.push(`FROM ${tableName}`);
@@ -227,8 +231,6 @@ export function buildQuerySql(
       .join('\n  AND ');
     parts.push(`WHERE ${predicates}`);
   }
-  // LIMIT as a {{placeholder}}: demonstrates the template syntax and lets
-  // the caller tune the row count at invocation time.
   parts.push(`LIMIT {{rowLimit}}`);
   parts.push(``);
   return parts.join('\n');

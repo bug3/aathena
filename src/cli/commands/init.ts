@@ -473,6 +473,10 @@ export function buildSampleSql(
   for (const part of requiredPartitions) {
     lines.push(`-- @param ${part.name} string`);
   }
+  // Explicit @param for the scaffolded LIMIT doubles as an annotation
+  // example; positiveInt validates as integer > 0 at runtime on top of
+  // the TS `number` type.
+  lines.push(`-- @param rowLimit positiveInt`);
 
   lines.push(``);
   lines.push(`SELECT *`);
@@ -485,8 +489,6 @@ export function buildSampleSql(
     lines.push(`WHERE ${predicates}`);
   }
 
-  // Use {{rowLimit}} so users encounter the placeholder syntax on their first
-  // query. sql-render infers `rowLimit: number` (positiveInt) from the context.
   lines.push(`LIMIT {{rowLimit}}`);
   lines.push(``);
 

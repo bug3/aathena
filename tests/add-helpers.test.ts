@@ -50,6 +50,7 @@ describe('buildQuerySql', () => {
     const sql = buildQuerySql('events');
     expect(sql).toContain('FROM events');
     expect(sql).toContain('LIMIT {{rowLimit}}');
+    expect(sql).toContain('-- @param rowLimit positiveInt');
     expect(sql).not.toContain('-- Columns:');
   });
 

@@ -88,6 +88,7 @@ describe('buildSampleSql', () => {
     expect(file.queryName).toBe('default');
     expect(file.contents).toContain('FROM events');
     expect(file.contents).toContain('LIMIT {{rowLimit}}');
+    expect(file.contents).toContain('-- @param rowLimit positiveInt');
   });
 
   it('falls back to example_table when no table is provided', () => {
