@@ -104,6 +104,18 @@ const result = await eventsDefault(athena, { status: 'active', rowLimit: 99 });
 
 `client.query()` retries `StartQueryExecution` with exponential backoff + full jitter when Athena responds with `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED`. Up to 6 attempts. Applies to every call, generated or inline, including tasks dispatched by `parallel()`.
 
+### Debug: export rendered SQL
+
+Pass `{ exportTo: <path> }` as the optional third argument to dump the rendered SQL (with parameter values substituted) to disk. The query still executes; missing parent directories are created, and the file is overwritten on each call. Forwarded directly to sql-render.
+
+```typescript
+await eventsDefault(
+  athena,
+  { status: 'active', rowLimit: 99 },
+  { exportTo: './debug/eventsDefault.sql' },
+);
+```
+
 ### `parallel()`
 
 `parallel()` runs multiple queries concurrently with a bounded cap that respects Athena's per-account active-DML quota. Tasks are passed as thunks (`() => query(...)`) so the helper can gate when each query actually starts.

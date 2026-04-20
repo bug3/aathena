@@ -1,6 +1,6 @@
 export { AathenaClient, createClient } from './client';
 export { createQuery, schema } from './query';
-export type { CreateQueryOptions } from './query';
+export type { CreateQueryOptions, RenderOptions } from './query';
 export { defineConfig, findProjectRoot } from './config';
 export { parallel } from './parallel';
 export type { ParallelOptions } from './parallel';

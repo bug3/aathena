@@ -87,6 +87,16 @@ const myQuery = createQuery<ResultType, ParamsType>(
 
 Factory that binds a SQL template to its types. Written by codegen; can be authored manually. The optional third arg `{ database }` is emitted automatically when the file's directory database differs from `config.database`.
 
+At call time each generated query function accepts an optional third argument `{ exportTo?: string }` that is forwarded to sql-render. When set, the rendered SQL (after parameter substitution) is written to that path for debugging / auditing; missing parent directories are created and the file is overwritten on each call. The query still executes.
+
+```typescript
+await eventsDefault(
+  athena,
+  { status: 'active', rowLimit: 99 },
+  { exportTo: './debug/eventsDefault.sql' },
+);
+```
+
 ### parallel
 
 Runs multiple queries concurrently with a bounded cap that respects Athena's per-account, per-region service quotas on active DML/DDL queries. Tasks must be passed as thunks (`() => query(...)`), not pre-started promises, so the helper can gate when each query actually starts.
@@ -212,7 +222,7 @@ Inline equivalent: `client.query(sql, { database: 'X' })` overrides `config.data
 - `schema` - parameter validation descriptors (re-exported from sql-render)
 - `defineConfig` - config helper
 - `AathenaError`, `QueryTimeoutError`, `QueryFailedError`, `QueryCancelledError`, `ColumnParseError` - error classes
-- Types: `AathenaConfig`, `QueryResult`, `QueryStatistics`, `QueryRuntimeRows`, `QueryOptions`, `ColumnMeta`, `ParallelOptions`, `QuotaKind`, `CreateQueryOptions`
+- Types: `AathenaConfig`, `QueryResult`, `QueryStatistics`, `QueryRuntimeRows`, `QueryOptions`, `ColumnMeta`, `ParallelOptions`, `QuotaKind`, `CreateQueryOptions`, `RenderOptions`
 
 ### Exports (aathena/runtime)
 

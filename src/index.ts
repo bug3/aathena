@@ -1,7 +1,7 @@
 // Public API
 export { AathenaClient, createClient } from './runtime/client';
 export { createQuery, schema } from './runtime/query';
-export type { CreateQueryOptions } from './runtime/query';
+export type { CreateQueryOptions, RenderOptions } from './runtime/query';
 export { defineConfig } from './runtime/config';
 export { parallel } from './runtime/parallel';
 export type { ParallelOptions } from './runtime/parallel';

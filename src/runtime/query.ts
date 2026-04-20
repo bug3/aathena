@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import type { QueryResult } from './types';
 import { AathenaClient } from './client';
 import { findProjectRoot } from './config';
@@ -6,9 +6,20 @@ import { findProjectRoot } from './config';
 // sql-render is used internally for template rendering
 import { defineQuery as sqlRenderDefine, schema as sqlRenderSchema } from 'sql-render';
 
+export interface RenderOptions {
+  /**
+   * Write the rendered SQL (with parameter values substituted) to this path
+   * for debugging or auditing. Forwarded directly to sql-render, which
+   * creates missing parent directories automatically. The query still
+   * executes; the file is overwritten on each call.
+   */
+  exportTo?: string;
+}
+
 type QueryFn<TResult, TParams> = (
   client: AathenaClient,
   params: TParams,
+  options?: RenderOptions,
 ) => Promise<QueryResult<TResult>>;
 
 export interface CreateQueryOptions {
@@ -28,18 +39,23 @@ export function createQuery<TResult, TParams = Record<string, never>>(
   // Defer project-root lookup and template load until the first call, so
   // importing a generated query doesn't trigger filesystem I/O at module
   // load time (important for bundled Lambda deploys and test isolation).
-  type RenderFn = (values: never) => { sql: string };
+  type RenderFn = (values: never, opts?: RenderOptions) => { sql: string };
   let renderFn: RenderFn | null = null;
 
-  return async (client, params) => {
+  return async (client, params, renderOptions) => {
     if (renderFn === null) {
-      const absolutePath = resolve(findProjectRoot(), sqlPath);
+      // Absolute sqlPath skips findProjectRoot so callers embedding aathena
+      // without an aathena.config.json (tests, custom build layouts) still
+      // work. Codegen always emits relative paths.
+      const absolutePath = isAbsolute(sqlPath)
+        ? sqlPath
+        : resolve(findProjectRoot(), sqlPath);
       const built = schemaDef
         ? sqlRenderDefine(absolutePath, schemaDef)
         : sqlRenderDefine<TParams & Record<string, string | number | boolean>>(absolutePath);
       renderFn = built as RenderFn;
     }
-    const { sql } = renderFn(params as never);
+    const { sql } = renderFn(params as never, renderOptions);
     return client.query<TResult>(sql, options.database ? { database: options.database } : {});
   };
 }
