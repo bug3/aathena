@@ -20,9 +20,12 @@ Init flags:
   --workgroup <name>       Skip the workgroup prompt
   --output-location <s3>   Skip the output-location prompt
   --tables <a,b,c>         Comma-separated tables to scaffold (skips multi-select)
+  --tables-dir <path>      SQL scaffold root (default 'tables'; persisted to config)
+  --out-dir <path>         Codegen output directory (default 'generated'; persisted to config)
+  --example-path <path>    Path of the runnable starter file (default 'src/main.ts')
   --no-sample              Do not scaffold any starter SQL
   --no-generate            Do not auto-run generate after scaffolding
-  --no-example             Do not write src/main.ts
+  --no-example             Do not write the example file
 
 Add flags:
   --name <query-name>      Query filename (default: 'default')
@@ -62,6 +65,9 @@ async function main() {
       outputLocation: flagString(flags, 'output-location'),
       noSample: flagBool(flags, 'sample') === false,
       tables: flagString(flags, 'tables'),
+      tablesDir: flagString(flags, 'tables-dir'),
+      outDir: flagString(flags, 'out-dir'),
+      examplePath: flagString(flags, 'example-path'),
       noGenerate: flagBool(flags, 'generate') === false,
       noExample: flagBool(flags, 'example') === false,
     });

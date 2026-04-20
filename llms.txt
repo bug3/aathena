@@ -39,9 +39,9 @@ Sequence:
 6. Auto-runs `generate`
 7. Writes a runnable `src/main.ts` demonstrating how to call the generated queries (single call for 1 table, `parallel()` for 2+)
 
-Flags: `--force` (overwrite existing config and regenerate `src/main.ts`), `--region`, `--database`, `--workgroup`, `--output-location`, `--tables a,b,c` (non-interactive scaffold selection), `--no-sample` (skip SQL scaffolding), `--no-generate` (skip auto-generate), `--no-example` (skip `src/main.ts`).
+Flags: `--force` (overwrite existing config and regenerate the example file), `--region`, `--database`, `--workgroup`, `--output-location`, `--tables a,b,c` (non-interactive scaffold selection), `--tables-dir <path>` (override SQL scaffold root, default `tables`; persisted to `config.tablesDir`), `--out-dir <path>` (override codegen output directory, default `generated`; persisted to `config.outDir`), `--example-path <path>` (override the runnable starter file, default `src/main.ts`; the generated import is rewritten relative to the new location), `--no-sample` (skip SQL scaffolding), `--no-generate` (skip auto-generate), `--no-example` (skip the example file).
 
-`--force` applies to config and `src/main.ts`; scaffolded SQL files are never overwritten because the user may have edited them.
+`--force` applies to config and the example file; scaffolded SQL files are never overwritten because the user may have edited them.
 
 ### add
 

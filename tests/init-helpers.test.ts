@@ -5,6 +5,7 @@ import {
   buildSampleSql,
   buildMainExample,
   barrelExportName,
+  computeGeneratedImportPath,
 } from '../src/cli/commands/init';
 
 describe('buildConfig', () => {
@@ -33,6 +34,18 @@ describe('buildConfig', () => {
       outputLocation: undefined,
     });
     expect(cfg).toEqual({ database: 'x' });
+  });
+
+  it('persists tablesDir and outDir when provided', () => {
+    expect(
+      buildConfig({ database: 'x', tablesDir: 'sql', outDir: 'gen' }),
+    ).toEqual({ database: 'x', tablesDir: 'sql', outDir: 'gen' });
+  });
+
+  it('omits tablesDir and outDir when they are empty or undefined', () => {
+    expect(buildConfig({ database: 'x', tablesDir: '', outDir: undefined })).toEqual({
+      database: 'x',
+    });
   });
 });
 
@@ -96,6 +109,16 @@ describe('buildSampleSql', () => {
     }
   });
 
+  it('honors a custom tablesDir for the path while keeping default contents', () => {
+    const file = buildSampleSql('sampledb', 'events', [], [], 'sql');
+    expect(file.path).toBe('sql/sampledb/events/default.sql');
+  });
+
+  it('strips leading ./ and trailing / from a custom tablesDir', () => {
+    const file = buildSampleSql('sampledb', 'events', [], [], './sql/');
+    expect(file.path).toBe('sql/sampledb/events/default.sql');
+  });
+
   it('emits WHERE + @param for each required partition', () => {
     const file = buildSampleSql('sampledb', 'events', [
       { name: 'tenant_id', type: 'string' },
@@ -153,6 +176,15 @@ describe('buildMainExample', () => {
     expect(out).toMatch(/main\(\)\.catch\(/);
   });
 
+  it('uses the provided import path when one is supplied', () => {
+    const out = buildMainExample(
+      [{ tableName: 'events', queryName: 'default', requiredPartitions: [] }],
+      './gen',
+    );
+    expect(out).toContain(`import { eventsDefault } from './gen';`);
+    expect(out).not.toContain(`'../generated'`);
+  });
+
   it('falls back to a client.query ping when no queries are scaffolded', () => {
     const out = buildMainExample([]);
     expect(out).toContain(`createClient`);
@@ -173,6 +205,36 @@ describe('buildMainExample', () => {
     expect(out).toContain(`Replace 'REPLACE_ME' with real values`);
     expect(out).toContain(
       `await eventsDefault(athena, { tenant_id: 'REPLACE_ME', dt: 'REPLACE_ME', limit: 33 });`,
+    );
+  });
+});
+
+describe('computeGeneratedImportPath', () => {
+  const cwd = '/repo';
+
+  it('matches the historic default of ../generated for src/main.ts -> generated', () => {
+    expect(computeGeneratedImportPath(cwd, 'src/main.ts', 'generated')).toBe(
+      '../generated',
+    );
+  });
+
+  it('renames the import when outDir is renamed', () => {
+    expect(computeGeneratedImportPath(cwd, 'src/main.ts', 'gen')).toBe('../gen');
+  });
+
+  it('handles nested example paths', () => {
+    expect(
+      computeGeneratedImportPath(cwd, 'apps/cli/src/main.ts', 'generated'),
+    ).toBe('../../../generated');
+  });
+
+  it('returns ./<dir> when example is at the project root', () => {
+    expect(computeGeneratedImportPath(cwd, 'main.ts', 'gen')).toBe('./gen');
+  });
+
+  it('returns ./<dir> when outDir is nested under the example dir', () => {
+    expect(computeGeneratedImportPath(cwd, 'src/main.ts', 'src/gen')).toBe(
+      './gen',
     );
   });
 });

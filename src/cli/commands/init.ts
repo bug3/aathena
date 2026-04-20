@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, relative } from 'node:path';
 import * as p from '@clack/prompts';
 import type { AathenaConfig } from '../../runtime/types';
 import { generate } from '../../codegen/generate';
@@ -29,6 +29,12 @@ export interface InitFlags {
   noGenerate?: boolean;
   /** Skip writing src/main.ts. */
   noExample?: boolean;
+  /** Override the codegen output directory (default: 'generated'). Persisted into config.outDir. */
+  outDir?: string;
+  /** Override the SQL scaffold root directory (default: 'tables'). Persisted into config.tablesDir. */
+  tablesDir?: string;
+  /** Override the example file path (default: 'src/main.ts'). */
+  examplePath?: string;
 }
 
 interface ScaffoldedQuery {
@@ -201,6 +207,8 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
     database,
     workgroup,
     outputLocation,
+    tablesDir: flags.tablesDir,
+    outDir: flags.outDir,
   });
   writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
   p.log.success(`Wrote ${CONFIG_FILE}`);
@@ -231,6 +239,7 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
         table,
         info.partitions,
         info.notes,
+        flags.tablesDir,
       );
       const absPath = resolve(cwd, sqlPath);
       mkdirSync(dirname(absPath), { recursive: true });
@@ -278,23 +287,29 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
   // the example; SQL files are always preserved because the user may have
   // edited them.
   let wroteMain = false;
+  const examplePathRel = flags.examplePath ?? 'src/main.ts';
   if (!flags.noExample && !flags.noGenerate && hasSelection) {
-    const mainPath = resolve(cwd, 'src/main.ts');
+    const mainPath = resolve(cwd, examplePathRel);
     const existed = existsSync(mainPath);
     if (existed && !flags.force) {
-      p.log.info('src/main.ts exists, not overwriting (use --force to regenerate)');
+      p.log.info(`${examplePathRel} exists, not overwriting (use --force to regenerate)`);
     } else {
       mkdirSync(dirname(mainPath), { recursive: true });
-      writeFileSync(mainPath, buildMainExample(scaffolded), 'utf-8');
-      p.log.success(existed ? 'Rewrote src/main.ts' : 'Wrote src/main.ts');
+      const importPath = computeGeneratedImportPath(
+        cwd,
+        examplePathRel,
+        flags.outDir ?? 'generated',
+      );
+      writeFileSync(mainPath, buildMainExample(scaffolded, importPath), 'utf-8');
+      p.log.success(existed ? `Rewrote ${examplePathRel}` : `Wrote ${examplePathRel}`);
       wroteMain = true;
     }
   }
 
   const nextSteps = wroteMain
-    ? `Next: npx tsx src/main.ts`
+    ? `Next: npx tsx ${examplePathRel}`
     : hasSelection && !flags.noGenerate
-      ? `Next: import from ./generated and call your queries.`
+      ? `Next: import from ./${flags.outDir ?? 'generated'} and call your queries.`
       : `Next: run 'npx aathena generate' to produce typed query functions.`;
   p.outro(nextSteps);
   return 0;
@@ -388,6 +403,8 @@ export interface BuildConfigInput {
   database: string;
   workgroup?: string;
   outputLocation?: string;
+  tablesDir?: string;
+  outDir?: string;
 }
 
 export function buildConfig(input: BuildConfigInput): AathenaConfig {
@@ -395,6 +412,8 @@ export function buildConfig(input: BuildConfigInput): AathenaConfig {
   if (input.region) out.region = input.region;
   if (input.workgroup) out.workgroup = input.workgroup;
   if (input.outputLocation) out.outputLocation = input.outputLocation;
+  if (input.tablesDir) out.tablesDir = input.tablesDir;
+  if (input.outDir) out.outDir = input.outDir;
   return out;
 }
 
@@ -419,10 +438,13 @@ export function buildSampleSql(
   tableName?: string,
   requiredPartitions: RequiredPartition[] = [],
   probeNotes: string[] = [],
+  tablesDir: string = 'tables',
 ): SampleSqlFile {
   const table = tableName ?? 'example_table';
   const queryName = 'default';
-  const path = `tables/${database}/${table}/${queryName}.sql`;
+  // Strip leading ./ so the resulting path looks tidy when tablesDir is the default.
+  const root = tablesDir.replace(/^\.\//, '').replace(/\/+$/, '');
+  const path = `${root}/${database}/${table}/${queryName}.sql`;
 
   const lines: string[] = [
     `-- Starter aathena query. Edit or delete as needed.`,
@@ -481,7 +503,10 @@ export function barrelExportName(tableName: string, queryName: string): string {
  * passes REPLACE_ME placeholder values. A note at the top of the file tells
  * the user where to edit before running.
  */
-export function buildMainExample(entries: ScaffoldedQuery[]): string {
+export function buildMainExample(
+  entries: ScaffoldedQuery[],
+  generatedImportPath: string = '../generated',
+): string {
   if (entries.length === 0) return buildEmptyExample();
 
   const exports = entries.map((e) => ({
@@ -506,7 +531,7 @@ export function buildMainExample(entries: ScaffoldedQuery[]): string {
   }
   lines.push(
     `import { ${runtimeImports} } from 'aathena';`,
-    `import { ${importList} } from '../generated';`,
+    `import { ${importList} } from '${generatedImportPath}';`,
     ``,
     `async function main() {`,
     `  const athena = createClient();`,
@@ -581,6 +606,24 @@ function buildEmptyExample(): string {
     `  process.exit(1);\n` +
     `});\n`
   );
+}
+
+/**
+ * Compute the relative import specifier from the example file's directory to
+ * the codegen output directory, normalized for use in an `import ... from`
+ * clause (forward slashes, leading `./` when not ascending).
+ */
+export function computeGeneratedImportPath(
+  cwd: string,
+  examplePathRel: string,
+  outDirRel: string,
+): string {
+  const fromDir = resolve(cwd, dirname(examplePathRel));
+  const toDir = resolve(cwd, outDirRel);
+  let rel = relative(fromDir, toDir).replace(/\\/g, '/');
+  if (rel === '') rel = '.';
+  if (!rel.startsWith('.')) rel = './' + rel;
+  return rel;
 }
 
 function formatAwsError(err: unknown): string {

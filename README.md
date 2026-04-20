@@ -264,10 +264,13 @@ Runs interactively by default, then:
 Flags:
 
 - `--region`, `--database`, `--workgroup`, `--output-location`, `--tables a,b,c` - non-interactive overrides
+- `--tables-dir <path>` - override the SQL scaffold root (default `tables`); persisted to `config.tablesDir`
+- `--out-dir <path>` - override the codegen output directory (default `generated`); persisted to `config.outDir`
+- `--example-path <path>` - override the runnable starter file (default `src/main.ts`); the `from '../generated'` import is rewritten to point at `--out-dir` from the chosen location
 - `--no-sample` - skip SQL scaffolding
 - `--no-generate` - skip the auto-generate step
-- `--no-example` - skip `src/main.ts`
-- `--force` - overwrite `aathena.config.json` and regenerate `src/main.ts` to reflect the current selection. SQL files are always preserved because you may have edited them.
+- `--no-example` - skip writing the example file
+- `--force` - overwrite `aathena.config.json` and regenerate the example file to reflect the current selection. SQL files are always preserved because you may have edited them.
 
 ### `aathena add`
 
