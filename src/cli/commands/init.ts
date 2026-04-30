@@ -75,7 +75,7 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
   if (!effectiveRegion) {
     const choice = await p.select({
       message: 'AWS region',
-      initialValue: 'us-east-1',
+      initialValue: 'eu-west-1',
       options: [
         ...AWS_REGIONS.map((r) => ({
           value: r.code,
