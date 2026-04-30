@@ -23,6 +23,7 @@ interface GenerateResult {
 export async function generate(config: AathenaConfig, cwd: string): Promise<GenerateResult> {
   const tablesDir = resolve(cwd, config.tablesDir ?? 'tables');
   const outDir = resolve(cwd, config.outDir ?? 'generated');
+  const indent = resolveIndent(config.codegen?.indent);
 
   // 1. Discover SQL files and extract structure
   const tablesDirRel = config.tablesDir ?? 'tables';
@@ -81,7 +82,7 @@ export async function generate(config: AathenaConfig, cwd: string): Promise<Gene
     const typeDir = resolve(typesDir, schema.database);
     mkdirSync(typeDir, { recursive: true });
 
-    const content = generateTypeFile(schema);
+    const content = generateTypeFile(schema, indent);
     const filePath = resolve(typeDir, `${schema.tableName}.ts`);
     writeFileSync(filePath, content, 'utf-8');
     typesGenerated++;
@@ -116,6 +117,7 @@ export async function generate(config: AathenaConfig, cwd: string): Promise<Gene
       primaryDatabase: config.database,
       parsed,
       typesImportPath,
+      indent,
     });
 
     writeFileSync(queryFilePath, content, 'utf-8');
@@ -192,6 +194,16 @@ function computeRelativeImport(from: string, to: string): string {
   let rel = relative(dirname(from), to).replace(/\.ts$/, '');
   if (!rel.startsWith('.')) rel = './' + rel;
   return rel;
+}
+
+// Default 2 spaces matches Prettier and the broader TS ecosystem. Values
+// outside [1, 8] are clamped to keep generated output sensible regardless of
+// what the user puts in their config.
+function resolveIndent(value: number | undefined): string {
+  if (value === undefined) return '  ';
+  const n = Math.trunc(value);
+  if (!Number.isFinite(n) || n < 1) return '  ';
+  return ' '.repeat(Math.min(n, 8));
 }
 
 export interface BarrelInput {

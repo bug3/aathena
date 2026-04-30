@@ -20,6 +20,8 @@ export interface QueryGenInput {
   parsed: ParsedSQL;
   /** Relative import path from generated query file to types file */
   typesImportPath: string;
+  /** Indentation string applied to nested lines. Defaults to two spaces. */
+  indent?: string;
 }
 
 export function generateQueryFile(input: QueryGenInput): string {
@@ -28,12 +30,13 @@ export function generateQueryFile(input: QueryGenInput): string {
     camelCase(fileNameWithoutExt(input.sqlRelativePath)),
   );
   const params = input.parsed.params;
+  const indent = input.indent ?? '  ';
 
   const hasSchema = params.length > 0 && params.some((p) => p.schemaType);
   const runtimeImports = hasSchema ? 'createQuery, schema' : 'createQuery';
   const needsDatabaseBinding = input.database !== input.primaryDatabase;
   const databaseArg = needsDatabaseBinding
-    ? `  { database: '${input.database}' },`
+    ? `${indent}{ database: '${input.database}' },`
     : null;
 
   const lines: string[] = [
@@ -50,7 +53,7 @@ export function generateQueryFile(input: QueryGenInput): string {
     lines.push('');
     lines.push(`export interface ${paramsInterfaceName} {`);
     for (const p of params) {
-      lines.push(`  ${p.name}: ${p.type};`);
+      lines.push(`${indent}${p.name}: ${p.type};`);
     }
     lines.push('}');
     lines.push('');
@@ -59,24 +62,24 @@ export function generateQueryFile(input: QueryGenInput): string {
     if (hasSchema) {
       lines.push(`const schemaDef = {`);
       for (const p of params) {
-        lines.push(`  ${p.name}: ${schemaExpression(p)},`);
+        lines.push(`${indent}${p.name}: ${schemaExpression(p)},`);
       }
       lines.push('};');
       lines.push('');
       lines.push(
         `export const ${queryFnName} = createQuery<${interfaceName}, ${paramsInterfaceName}>(`,
       );
-      lines.push(`  '${input.sqlRelativePath}',`);
-      lines.push(`  schemaDef,`);
+      lines.push(`${indent}'${input.sqlRelativePath}',`);
+      lines.push(`${indent}schemaDef,`);
       if (databaseArg) lines.push(databaseArg);
       lines.push(`);`);
     } else {
       lines.push(
         `export const ${queryFnName} = createQuery<${interfaceName}, ${paramsInterfaceName}>(`,
       );
-      lines.push(`  '${input.sqlRelativePath}',`);
+      lines.push(`${indent}'${input.sqlRelativePath}',`);
       if (databaseArg) {
-        lines.push(`  undefined,`);
+        lines.push(`${indent}undefined,`);
         lines.push(databaseArg);
       }
       lines.push(`);`);
@@ -87,9 +90,9 @@ export function generateQueryFile(input: QueryGenInput): string {
     lines.push(
       `export const ${queryFnName} = createQuery<${interfaceName}, Record<string, never>>(`,
     );
-    lines.push(`  '${input.sqlRelativePath}',`);
+    lines.push(`${indent}'${input.sqlRelativePath}',`);
     if (databaseArg) {
-      lines.push(`  undefined,`);
+      lines.push(`${indent}undefined,`);
       lines.push(databaseArg);
     }
     lines.push(`);`);

@@ -237,7 +237,7 @@ Same as above. Separate entry point used by generated code.
 - Codegen fetches schemas in parallel via `Promise.allSettled`, fails fast on Glue errors
 - SQL files use sql-render for template rendering with built-in injection protection
 - Directory convention: `tables/{database}/{table}/{query}.sql`, nested grouping supported; directory database drives both Glue schema lookup and runtime execution context
-- Config: `aathena.config.json` with `database` (required), `region`, `workgroup`, `outputLocation`, `tablesDir`, `outDir`, `query.timeout/pollingInterval/maxPollingInterval`, `maxConcurrency` (all optional)
+- Config: `aathena.config.json` with `database` (required), `region`, `workgroup`, `outputLocation`, `tablesDir`, `outDir`, `codegen.indent` (default `2`, matches Prettier and the broader TS ecosystem; clamped to `[1, 8]`), `query.timeout/pollingInterval/maxPollingInterval`, `maxConcurrency` (all optional)
 - `@aws-sdk/client-service-quotas` is an optional dependency used by `parallel({ concurrency: 'auto' })`; loaded via dynamic import so it costs nothing when unused
 - IAM: runtime needs Athena start/get/results + S3 read/write; init needs `glue:GetDatabases/GetTables/GetTable`, `athena:ListWorkGroups/GetWorkGroup`; `parallel` auto mode optionally needs `servicequotas:GetServiceQuota`
 - Dual CJS/ESM build via tsup

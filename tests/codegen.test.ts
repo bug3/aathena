@@ -35,6 +35,21 @@ describe('generateTypeFile', () => {
   });
 });
 
+describe('generateTypeFile indent option', () => {
+  it('honours a custom indent string', () => {
+    const schema: TableSchema = {
+      database: 'sampledb',
+      tableName: 'events',
+      columns: [{ name: 'event_id', type: 'integer', nullable: false }],
+    };
+
+    const output = generateTypeFile(schema, '    ');
+
+    expect(output).toContain('    event_id: number;');
+    expect(output).toMatch(/^ {4}event_id: number;$/m);
+  });
+});
+
 describe('generateQueryFile', () => {
   it('generates query file with inferred params', () => {
     const sql = `SELECT * FROM events WHERE status = '{{status}}' LIMIT {{rowLimit}}`;
@@ -149,6 +164,47 @@ SELECT * FROM events WHERE status = '{{status}}'`;
     expect(output).toContain('schemaDef');
     expect(output).toContain(`{ database: 'sales' }`);
     expect(output).not.toContain('undefined,');
+  });
+});
+
+describe('generateQueryFile indent option', () => {
+  it('applies a custom indent to params, schemaDef, and createQuery args', () => {
+    const sql = `-- @param status enum('active','pending')
+SELECT * FROM events WHERE status = '{{status}}'`;
+    const parsed = parseSQL(sql);
+
+    const output = generateQueryFile({
+      sqlRelativePath: 'tables/sampledb/events/product.sql',
+      tableName: 'events',
+      database: 'sampledb',
+      primaryDatabase: 'sampledb',
+      parsed,
+      typesImportPath: '../../types/sampledb/events',
+      indent: '    ',
+    });
+
+    expect(output).toContain("    status: 'active' | 'pending';");
+    expect(output).toContain("    status: schema.enum('active', 'pending'),");
+    expect(output).toContain("    'tables/sampledb/events/product.sql',");
+    expect(output).toContain('    schemaDef,');
+  });
+
+  it('applies custom indent to per-query database binding', () => {
+    const sql = `SELECT COUNT(*) AS cnt FROM events`;
+    const parsed = parseSQL(sql);
+
+    const output = generateQueryFile({
+      sqlRelativePath: 'tables/sales/events/count.sql',
+      tableName: 'events',
+      database: 'sales',
+      primaryDatabase: 'marketing',
+      parsed,
+      typesImportPath: '../../types/sales/events',
+      indent: '\t',
+    });
+
+    expect(output).toContain("\t{ database: 'sales' },");
+    expect(output).toContain('\tundefined,');
   });
 });
 

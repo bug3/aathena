@@ -321,6 +321,9 @@ Re-runs codegen: fetches Glue schemas for every SQL file under `tables/` in para
   "outputLocation": "s3://my-bucket/athena-results/",
   "tablesDir": "./tables",
   "outDir": "./generated",
+  "codegen": {
+    "indent": 2
+  },
   "query": {
     "timeout": 300000,
     "pollingInterval": 500,
@@ -337,6 +340,7 @@ Re-runs codegen: fetches Glue schemas for every SQL file under `tables/` in para
 | `outputLocation` | - | S3 path for query results (optional if workgroup has a default) |
 | `tablesDir` | `./tables` | SQL files directory |
 | `outDir` | `./generated` | Codegen output directory |
+| `codegen.indent` | `2` | Number of spaces used to indent generated TypeScript files (matches Prettier / Google / Airbnb / Angular / NestJS defaults). Clamped to `[1, 8]` |
 | `query.timeout` | `300000` | Query timeout in ms (5 min) |
 | `query.pollingInterval` | `500` | Initial poll interval in ms |
 | `query.maxPollingInterval` | `5000` | Max poll interval in ms |

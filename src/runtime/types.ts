@@ -5,6 +5,12 @@ export interface AathenaConfig {
   outputLocation?: string;
   tablesDir?: string;
   outDir?: string;
+  codegen?: {
+    // Number of spaces used to indent generated TypeScript files. Defaults to
+    // 2, which matches Prettier and the broader TS ecosystem (Google, Airbnb,
+    // Angular, NestJS templates).
+    indent?: number;
+  };
   query?: {
     timeout?: number;
     pollingInterval?: number;
