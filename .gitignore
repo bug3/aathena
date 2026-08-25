@@ -1,6 +1,11 @@
 node_modules/
 dist/
 generated/
+# ...but the example projects commit theirs: they are the advertised learning
+# path and CI typechecks them. Without this, a NEW generated file under
+# examples/ is silently skipped by `git add .` and the examples drift.
+!examples/**/generated/
+!examples/**/generated/**
 coverage/
 *.tsbuildinfo
 
