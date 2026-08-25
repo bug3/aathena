@@ -45,8 +45,8 @@ Every row is typed 1:1 against your Glue schema. Scalars land as native TypeScri
 const result = await getEvents(athena, { rowLimit: 33 });
 const row = result.rows[0];
 
-row.eventId;         // bigint
-row.createdAt;       // Date
+row.event_id;        // bigint
+row.created_at;      // Date
 row.tags;            // string[]
 row.metadata;        // Record<string, number>
 row.address.city;    // string - direct struct field access
