@@ -7,12 +7,12 @@ import type { Users } from '../../../types/sampledb/users';
 
 export interface ActiveParams {
   minAge: number;
-  limit: number;
+  rowLimit: number;
 }
 
 const schemaDef = {
   minAge: schema.positiveInt,
-  limit: schema.positiveInt,
+  rowLimit: schema.positiveInt,
 };
 
 export const active = createQuery<Users, ActiveParams>(

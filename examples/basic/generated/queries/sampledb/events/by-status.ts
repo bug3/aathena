@@ -7,12 +7,12 @@ import type { Events } from '../../../types/sampledb/events';
 
 export interface ByStatusParams {
   status: string;
-  limit: number;
+  rowLimit: number;
 }
 
 const schemaDef = {
   status: schema.string,
-  limit: schema.positiveInt,
+  rowLimit: schema.positiveInt,
 };
 
 export const byStatus = createQuery<Events, ByStatusParams>(
