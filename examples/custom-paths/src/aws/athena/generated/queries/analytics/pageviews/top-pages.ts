@@ -8,13 +8,13 @@ import type { Pageviews } from '../../../types/analytics/pageviews';
 export interface TopPagesParams {
   startDate: string;
   endDate: string;
-  limit: number;
+  rowLimit: number;
 }
 
 const schemaDef = {
   startDate: schema.isoDate,
   endDate: schema.isoDate,
-  limit: schema.positiveInt,
+  rowLimit: schema.positiveInt,
 };
 
 export const topPages = createQuery<Pageviews, TopPagesParams>(
