@@ -7,12 +7,12 @@ import type { Products } from '../../../types/sampledb/products';
 
 export interface ByCategoryParams {
   category: string;
-  limit: number;
+  rowLimit: number;
 }
 
 const schemaDef = {
   category: schema.string,
-  limit: schema.positiveInt,
+  rowLimit: schema.positiveInt,
 };
 
 export const byCategory = createQuery<Products, ByCategoryParams>(

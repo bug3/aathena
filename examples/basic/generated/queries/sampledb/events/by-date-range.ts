@@ -9,14 +9,14 @@ export interface ByDateRangeParams {
   status: 'active' | 'pending' | 'done';
   startDate: string;
   endDate: string;
-  limit: number;
+  rowLimit: number;
 }
 
 const schemaDef = {
   status: schema.enum('active', 'pending', 'done'),
   startDate: schema.isoDate,
   endDate: schema.isoDate,
-  limit: schema.positiveInt,
+  rowLimit: schema.positiveInt,
 };
 
 export const byDateRange = createQuery<Events, ByDateRangeParams>(
