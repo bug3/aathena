@@ -74,6 +74,26 @@ describe('generateQueryFile', () => {
     expect(output).not.toContain('database:');
   });
 
+  it('preserves word boundaries in the params interface name', () => {
+    // Guards a multi-word query name. `product.sql` is a single word, so it
+    // passes whether or not the name survives the camelCase round trip.
+    const parsed = parseSQL(`SELECT * FROM events WHERE status = '{{status}}'`);
+
+    const output = generateQueryFile({
+      sqlRelativePath: 'tables/sampledb/events/by-date-range.sql',
+      tableName: 'events',
+      database: 'sampledb',
+      primaryDatabase: 'sampledb',
+      parsed,
+      typesImportPath: '../../types/sampledb/events',
+    });
+
+    expect(output).toContain('export interface ByDateRangeParams {');
+    expect(output).toContain(
+      'export const byDateRange = createQuery<Events, ByDateRangeParams>(',
+    );
+  });
+
   it('generates query file with @param annotations and schema', () => {
     const sql = `-- @param status enum('active','pending')
 -- @param rowLimit positiveInt

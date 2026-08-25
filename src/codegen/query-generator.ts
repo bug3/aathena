@@ -26,9 +26,11 @@ export interface QueryGenInput {
 
 export function generateQueryFile(input: QueryGenInput): string {
   const interfaceName = pascalCase(input.tableName);
-  const queryFnName = safeIdentifier(
-    camelCase(fileNameWithoutExt(input.sqlRelativePath)),
-  );
+  // pascalCase() lowercases the tail of each segment, so it is not idempotent:
+  // pascalCase(camelCase('by-status')) is 'Bystatus', not 'ByStatus'. Both names
+  // must therefore derive from the raw file name, never from each other.
+  const baseName = fileNameWithoutExt(input.sqlRelativePath);
+  const queryFnName = safeIdentifier(camelCase(baseName));
   const params = input.parsed.params;
   const indent = input.indent ?? '  ';
 
@@ -49,7 +51,7 @@ export function generateQueryFile(input: QueryGenInput): string {
 
   // Generate params interface if there are params
   if (params.length > 0) {
-    const paramsInterfaceName = `${pascalCase(queryFnName)}Params`;
+    const paramsInterfaceName = `${pascalCase(baseName)}Params`;
     lines.push('');
     lines.push(`export interface ${paramsInterfaceName} {`);
     for (const p of params) {
