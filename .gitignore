@@ -30,3 +30,6 @@ playground/
 
 # Local test artifacts
 *.tgz
+
+# VitePress (build output already matches the bare `dist/` rule above)
+docs/.vitepress/cache/
