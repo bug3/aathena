@@ -25,6 +25,9 @@ Thumbs.db
 # Playground
 playground/
 
+# MAGI consult records
+.magi/
+
 # Claude
 .claude/
 
