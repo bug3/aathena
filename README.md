@@ -5,11 +5,13 @@
 [![license](https://img.shields.io/npm/l/aathena)](LICENSE)
 [![node](https://img.shields.io/node/v/aathena)](package.json)
 
-Type-safe AWS Athena client for TypeScript.
+Type-safe Amazon Athena client and AWS Glue code generator for TypeScript.
 
 - Scaffold a project straight from your AWS account with `npx aathena init`
 - 1:1 type mapping from AWS Glue to TypeScript, including native Parquet/ORC arrays, maps, and structs - no `CAST()` or `JSON.parse`
 - Run queries concurrently with `parallel()`, with automatic detection of injected-projection partitions (including those hidden behind Presto/Trino views)
+
+**[Documentation](https://bug3.github.io/aathena/)** - guide and full reference.
 
 Built on [@aws-sdk/client-athena](https://www.npmjs.com/package/@aws-sdk/client-athena) and [sql-render](https://github.com/bug3/sql-render). See the [`examples/`](examples/) directory for working projects.
 

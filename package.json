@@ -1,7 +1,7 @@
 {
   "name": "aathena",
   "version": "0.3.4",
-  "description": "Type-safe AWS Athena client for TypeScript",
+  "description": "Type-safe Amazon Athena client and AWS Glue code generator for TypeScript",
   "author": "bug3",
   "license": "MIT",
   "repository": {
@@ -11,7 +11,7 @@
   "bugs": {
     "url": "https://github.com/bug3/aathena/issues"
   },
-  "homepage": "https://github.com/bug3/aathena#readme",
+  "homepage": "https://bug3.github.io/aathena/",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.cjs",
@@ -52,12 +52,17 @@
   },
   "keywords": [
     "athena",
+    "amazon-athena",
     "aws-athena",
+    "athena-client",
     "aws",
-    "typescript",
-    "type-safe",
+    "aws-glue",
+    "glue",
     "codegen",
-    "sql"
+    "code-generation",
+    "sql",
+    "type-safe",
+    "typescript"
   ],
   "engines": {
     "node": ">=20"
