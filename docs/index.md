@@ -7,8 +7,11 @@ hero:
   tagline: Generate typed query functions from your AWS Glue catalog, then call them like ordinary functions.
   actions:
     - theme: brand
-      text: npm install aathena
-      link: https://www.npmjs.com/package/aathena
+      text: Get started
+      link: /guide/getting-started
+    - theme: alt
+      text: Reference
+      link: /reference/configuration
     - theme: alt
       text: View on GitHub
       link: https://github.com/bug3/aathena

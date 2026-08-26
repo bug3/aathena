@@ -28,7 +28,29 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
+      { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'Reference', link: '/reference/configuration' },
       { text: 'npm', link: 'https://www.npmjs.com/package/aathena' },
+    ],
+
+    sidebar: [
+      {
+        text: 'Guide',
+        items: [
+          { text: 'Getting started', link: '/guide/getting-started' },
+          { text: 'Writing queries', link: '/guide/writing-queries' },
+          { text: 'Running queries', link: '/guide/running-queries' },
+        ],
+      },
+      {
+        text: 'Reference',
+        items: [
+          { text: 'Configuration', link: '/reference/configuration' },
+          { text: 'Type mapping', link: '/reference/type-mapping' },
+          { text: 'Generated code', link: '/reference/generated-code' },
+          { text: 'CLI', link: '/reference/cli' },
+        ],
+      },
     ],
 
     socialLinks: [{ icon: 'github', link: 'https://github.com/bug3/aathena' }],
