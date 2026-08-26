@@ -2,6 +2,7 @@
 
 // Types
 export type { Events } from './types/sampledb/events';
+export type { Orders } from './types/sampledb/orders';
 export type { Products } from './types/sampledb/products';
 export type { Users } from './types/sampledb/users';
 
@@ -9,5 +10,6 @@ export type { Users } from './types/sampledb/users';
 export { byDateRange } from './queries/sampledb/events/by-date-range';
 export { byStatus } from './queries/sampledb/events/by-status';
 export { totalRevenue } from './queries/sampledb/events/total-revenue';
+export { detail } from './queries/sampledb/orders/detail';
 export { byCategory } from './queries/sampledb/products/by-category';
 export { active } from './queries/sampledb/users/active';
