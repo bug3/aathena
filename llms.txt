@@ -1,244 +1,26 @@
 # aathena
 
-> Type-safe AWS Athena client for TypeScript with codegen
+> Type-safe Amazon Athena client and AWS Glue code generator for TypeScript.
 
-Type-safe AWS Athena client for TypeScript.
+aathena reads your AWS Glue catalog and generates one typed TypeScript function per SQL file. Column names and types come from the catalog verbatim, parameters are validated before the query is submitted, and Parquet/ORC arrays, maps and structs are parsed back recursively.
 
-- Scaffold a project from AWS with `npx aathena init`
-- Edit scaffolded SQL files with `{{variable}}` placeholders
-- 1:1 type mapping from AWS Glue to TypeScript, including native Parquet/ORC arrays, maps, and structs (no `CAST()` or `JSON.parse`)
-- Auto-detects injected-projection partitions (including those hidden behind Presto/Trino views) and scaffolds the required WHERE predicates
-- Run queries concurrently with `parallel()`, which respects Athena's per-account service quota
+## Guide
 
-## 60-second onboarding
+- [Getting started](https://bug3.github.io/aathena/guide/getting-started.md): Install aathena, scaffold a project against your AWS Glue catalog, and run your first typed Athena query.
+- [Writing queries](https://bug3.github.io/aathena/guide/writing-queries.md): Write ordinary SQL with typed placeholders. How parameter types are inferred, and the @param annotations that override them.
+- [Running queries](https://bug3.github.io/aathena/guide/running-queries.md): Call generated query functions, read typed rows, run queries concurrently with parallel(), and handle Athena errors.
+- [Partitions and views](https://bug3.github.io/aathena/guide/partitions.md): How aathena probes Athena partition projection and traces Presto/Trino views so scaffolded SQL carries the required WHERE predicates.
 
-```bash
-npm install aathena
-npx aathena init          # scaffold config, SQL, generated/, and src/main.ts
-npx tsx src/main.ts       # run your first query
-```
+## Reference
 
-`init` picks a Glue database, lets you multi-select tables, probes each for partition requirements (following Presto/Trino views to their underlying tables), runs `generate`, and writes a runnable `src/main.ts` that imports and invokes every scaffolded query. Queries needing partition values get `REPLACE_ME` placeholders in `main.ts` with a note at the top of the file.
+- [API surface](https://bug3.github.io/aathena/reference/api.md): Everything exported from aathena and aathena/runtime: the client, createQuery, parallel, schema, and the error classes.
+- [Configuration](https://bug3.github.io/aathena/reference/configuration.md): Every field of aathena.config.json, its default, and how to override the config at runtime.
+- [Type mapping](https://bug3.github.io/aathena/reference/type-mapping.md): How Athena and Glue column types map to TypeScript, including arrays, maps, structs, and the partition-key nullability rule.
+- [Generated code](https://bug3.github.io/aathena/reference/generated-code.md): What aathena generate writes: export names, query files, the barrel, and cross-database bindings.
+- [Query statistics](https://bug3.github.io/aathena/reference/query-statistics.md): The statistics block on every QueryResult: timings, bytes scanned, cache hits, and opt-in runtime row counts.
+- [CLI](https://bug3.github.io/aathena/reference/cli.md): Reference for aathena init, add, and generate, with every flag.
 
-After `npx tsx src/main.ts` runs, every row is typed 1:1 against the Glue schema. Scalars land as native TypeScript (`Date` for timestamps, `bigint`, `number`, `string`), and Parquet/ORC arrays, maps, and structs parse back recursively - even nested. Field access is direct (`row.address.city` -> `string`, `row.items[0].qty` -> `number`), with no `CAST()` in SQL or manual `JSON.parse`.
+## Optional
 
-## CLI commands
-
-### init
-
-```
-aathena init [flags]
-```
-
-Sequence:
-1. Resolves the AWS region from `--region`, `AWS_REGION` / `AWS_DEFAULT_REGION`, or an interactive select prompt (hardcoded list of commercial regions plus a `Custom...` option that falls through to a free-text prompt); lists Glue databases + Athena workgroups; inherits workgroup output location when available
-2. Writes `aathena.config.json`, updates `.gitignore` (adds `node_modules/` only; `generated/` is committed by default)
-3. Multi-selects tables to scaffold SQL for (falls back to `example_table` if none found)
-4. Probes each selection for injected-projection partitions, following Presto/Trino views to underlying tables
-5. Writes `tables/<db>/<table>/default.sql` with `LIMIT {{rowLimit}}`, a `-- @param rowLimit positiveInt` annotation, and any required partition `-- @param` / `WHERE` predicates
-6. Auto-runs `generate`
-7. Writes a runnable `src/main.ts` demonstrating how to call the generated queries (single call for 1 table, `parallel()` for 2+)
-
-Flags: `--force` (overwrite existing config and regenerate the example file), `--region`, `--database`, `--workgroup`, `--output-location`, `--tables a,b,c` (non-interactive scaffold selection), `--tables-dir <path>` (override SQL scaffold root, default `tables`; persisted to `config.tablesDir`), `--out-dir <path>` (override codegen output directory, default `generated`; persisted to `config.outDir`), `--example-path <path>` (override the runnable starter file, default `src/main.ts`; the generated import is rewritten relative to the new location), `--no-sample` (skip SQL scaffolding), `--no-generate` (skip auto-generate), `--no-example` (skip the example file).
-
-`--force` applies to config and the example file; scaffolded SQL files are never overwritten because the user may have edited them.
-
-### add
-
-```
-aathena add <table> [flags]
-aathena add <database>.<table> [flags]
-```
-
-Scaffolds a SQL file under `tables/{database}/{table}/{name}.sql`. Always probes the table's partitions (and any views it resolves to) so the scaffold includes the right WHERE predicates. When `database.table` is given and `database !== config.database`, prompts: (1) scaffold with per-query database binding, (2) switch `config.database`, (3) cancel. Auto-runs `generate` unless `--no-generate`.
-
-Flags: `--name <query-name>` (default `default`), `--from-schema` (embed Glue columns as a comment block), `--force` (overwrite), `--no-generate`.
-
-### generate
-
-```
-aathena generate
-```
-
-Walks `tables/`, discovers SQL files, fetches schemas from Glue in parallel, produces `generated/types/{database}/{table}.ts` (from the Glue schema) and `generated/queries/{database}/{table}/{query}.ts` (binds the SQL to its types) plus a barrel `generated/index.ts`. Surfaces a one-line info when query directory database differs from `config.database` and per-query binding is emitted.
-
-## API
-
-### createClient
-
-```typescript
-createClient()         // reads from aathena.config.json automatically
-createClient(config)   // uses the provided AathenaConfig
-```
-
-Returns an `AathenaClient` that executes queries against Athena.
-
-### createQuery
-
-```typescript
-import { createQuery, schema } from 'aathena/runtime';
-
-const myQuery = createQuery<ResultType, ParamsType>(
-  'tables/db/table/query.sql',
-  { status: schema.enum('active', 'done'), rowLimit: schema.positiveInt },
-  { database: 'db' },   // optional, overrides config.database for this query
-);
-```
-
-Factory that binds a SQL template to its types. Written by codegen; can be authored manually. The optional third arg `{ database }` is emitted automatically when the file's directory database differs from `config.database`.
-
-At call time each generated query function accepts an optional third argument `{ exportTo?: string }` that is forwarded to sql-render. When set, the rendered SQL (after parameter substitution) is written to that path for debugging / auditing; missing parent directories are created and the file is overwritten on each call. The query still executes.
-
-```typescript
-await eventsDefault(
-  athena,
-  { status: 'active', rowLimit: 99 },
-  { exportTo: './debug/eventsDefault.sql' },
-);
-```
-
-### parallel
-
-Runs multiple queries concurrently with a bounded cap that respects Athena's per-account, per-region service quotas on active DML/DDL queries. Tasks must be passed as thunks (`() => query(...)`), not pre-started promises, so the helper can gate when each query actually starts.
-
-```typescript
-import { parallel } from 'aathena';
-
-const [users, orders] = await parallel(
-  [
-    () => getUsers(client, {}),
-    () => getOrders(client, { from: '2022-02-02' }),
-  ],
-  { concurrency: 'auto', client },
-);
-```
-
-Options: `concurrency: number | 'auto'` (default `5`), `client` (required for `'auto'` unless `maxConcurrency` is set in config), `kind: 'dml' | 'ddl'` (default `'dml'`), `reserveHeadroom: number` (default `1`), `mode: 'all' | 'allSettled'` (default `'all'`).
-
-Concurrency resolution for `'auto'`:
-1. `AathenaConfig.maxConcurrency` if set
-2. Live AWS Service Quotas lookup (`L-D405C694` for DML, `L-FCDFE414` for DDL), requires `servicequotas:GetServiceQuota` IAM permission
-3. Region-aware conservative fallback (50% of AWS-documented default, clamped to `[5, 25]`)
-
-Returns a tuple typed by each thunk's return value. In `'allSettled'` mode, returns `PromiseSettledResult<T>` per task.
-
-`client.query()` separately retries `StartQueryExecution` on `TooManyRequestsException / CONCURRENT_QUERY_LIMIT_EXCEEDED` with exponential backoff + full jitter, up to 6 attempts.
-
-### Parameter types
-
-Parameters are inferred from SQL context or declared with `@param` annotations:
-
-**Inference rules:**
-- `'{{var}}'` (quoted) - string
-- `LIMIT {{var}}` / `OFFSET {{var}}` - number (positiveInt); placeholder name is free (scaffold uses `{{rowLimit}}` / `{{skip}}`, not `{{limit}}` / `{{offset}}`, to avoid confusing SQL formatters that treat the placeholder as the keyword itself)
-- `>= {{var}}` (unquoted comparison) - number
-- default - string
-
-**@param annotations (take priority):**
-- `string` - SQL injection check
-- `number` - finite number
-- `boolean` - true/false
-- `positiveInt` - integer > 0
-- `isoDate` - YYYY-MM-DD
-- `isoTimestamp` - ISO 8601
-- `identifier` - SQL identifier
-- `uuid` - RFC 4122 UUID
-- `s3Path` - s3://bucket/path
-- `enum('a','b','c')` - whitelist
-
-### Type mapping (Athena to TypeScript, 1:1)
-
-Glue column types map 1:1 to TypeScript:
-
-- `varchar`, `string`, `char` - `string`
-- `integer`, `int`, `smallint`, `tinyint` - `number`
-- `bigint` - `bigint`
-- `double`, `float`, `real` - `number`
-- `decimal` - `string` (preserves precision)
-- `boolean` - `boolean`
-- `date` - `string` (YYYY-MM-DD)
-- `timestamp` - `Date`
-- `json` - `unknown`
-- `binary`, `varbinary` - `string`
-- `array<T>` - `T[]`
-- `map<K, V>` - `Record<K, V>`
-- `struct<a:T, b:U>` - `{ a: T; b: U }`
-
-Regular columns are nullable (`T | null`); partition keys are NOT NULL.
-
-Complex types stay native: Athena returns every value as a flat string at the SDK level, even when the underlying Parquet/ORC columns are native arrays, maps, or structs. aathena parses them back recursively so user code sees the same shapes the source data uses - no `CAST()` in SQL, no extra views, no manual `JSON.parse`. Nested combinations like `array<map<string, struct<...>>>` work the same way.
-
-### Generated export names
-
-The barrel at `generated/index.ts` re-exports every query under a JS-safe identifier:
-- Plain camelCase name when not reserved and unique (`latest.sql` -> `latest`)
-- `{table}{Query}` alias when the name collides with a JS reserved word (`default.sql` in `events/` -> `eventsDefault`)
-- Same `{table}{Query}` alias when two queries across different tables share a filename
-
-The query file itself always suffixes reserved words with `_` (e.g., `export const default_ = createQuery(...)`) so the generated TS is syntactically valid even if the barrel is bypassed.
-
-### Partition projection + views
-
-Athena tables with partition projection `type=injected` require a static WHERE predicate on the partition column. `fetchRequiredPartitions` (used by `init` and `add`) inspects Glue `Table.Parameters` for `projection.enabled` and per-column `projection.<col>.type`, returning columns that must appear in every WHERE clause. Scaffolded SQL gets:
-- `-- @param <col> string` annotations
-- `WHERE <col> = '{{<col>}}'` predicates
-- `REPLACE_ME` placeholder values in `src/main.ts`
-
-For Presto/Trino views (detected via `TableType === 'VIRTUAL_VIEW'` or `presto_view` / `trino_view` parameter flags), aathena decodes the view's `ViewOriginalText`, extracts `FROM` / `JOIN` table references, and probes those underlying tables recursively up to depth 3 with a visited set for cycle safety. Probe notes (view trace results, failed parses, depth-limit hits) are written into the scaffolded SQL as comments so the user can see why specific predicates were added or what might be missing.
-
-### Query statistics
-
-Every `QueryResult` includes a `statistics: QueryStatistics` block from `GetQueryExecution`. Pass `{ includeRuntimeStats: true }` to `client.query()` for input/output row counts via an extra `GetQueryRuntimeStatistics` call.
-
-```typescript
-const result = await athena.query<Row>(sql, { includeRuntimeStats: true });
-result.statistics.totalExecutionTimeInMillis;
-result.statistics.resultReused;
-result.statistics.runtime?.outputRows;
-```
-
-Fields: `engineExecutionTimeInMillis`, `totalExecutionTimeInMillis`, `queryQueueTimeInMillis`, `queryPlanningTimeInMillis`, `servicePreProcessingTimeInMillis`, `serviceProcessingTimeInMillis`, `dataScannedInBytes`, `dpuCount?`, `resultReused?`, `runtime?: { inputRows?, inputBytes?, outputRows?, outputBytes? }` (opt-in).
-
-### Cross-database queries
-
-When a SQL file lives under `tables/{directory-db}/...` and `directory-db !== config.database`, codegen emits the query with an explicit per-call database binding so it routes correctly at runtime. Users don't write this manually: `aathena add <db>.<table>` scaffolds under the correct directory and `generate` does the rest.
-
-Inline equivalent: `client.query(sql, { database: 'X' })` overrides `config.database` for a single call.
-
-### Error classes
-
-- `AathenaError` - base error
-- `QueryTimeoutError` - query exceeded timeout (`queryExecutionId`, `timeoutMs`)
-- `QueryFailedError` - Athena returned an error (`queryExecutionId`, `athenaErrorMessage`)
-- `QueryCancelledError` - query was cancelled (`queryExecutionId`)
-- `ColumnParseError` - failed to parse a column value (`column`, `value`, `expectedType`)
-
-### Exports (aathena)
-
-- `createClient` - create an Athena client
-- `AathenaClient` - client class
-- `createQuery` - query factory function
-- `parallel` - bounded-concurrency runner for multiple queries
-- `schema` - parameter validation descriptors (re-exported from sql-render)
-- `defineConfig` - config helper
-- `AathenaError`, `QueryTimeoutError`, `QueryFailedError`, `QueryCancelledError`, `ColumnParseError` - error classes
-- Types: `AathenaConfig`, `QueryResult`, `QueryStatistics`, `QueryRuntimeRows`, `QueryOptions`, `ColumnMeta`, `ParallelOptions`, `QuotaKind`, `CreateQueryOptions`, `RenderOptions`
-
-### Exports (aathena/runtime)
-
-Same as above. Separate entry point used by generated code.
-
-## Key details
-
-- Built on `@aws-sdk/client-athena`, `@aws-sdk/client-glue`, and `sql-render`; CLI uses `@clack/prompts`
-- Scaffolded SQL uses `LIMIT {{rowLimit}}` with an explicit `-- @param rowLimit positiveInt` annotation (doubles as an example of the annotation syntax); `src/main.ts` passes `rowLimit: 33` as a runnable default
-- Query lifecycle: start query (with retry on concurrent-limit throttling), poll with exponential backoff, paginate results, parse rows
-- Nullable columns: regular Glue columns are nullable (`T | null`), partition keys are NOT NULL
-- Codegen fetches schemas in parallel via `Promise.allSettled`, fails fast on Glue errors
-- SQL files use sql-render for template rendering with built-in injection protection
-- Directory convention: `tables/{database}/{table}/{query}.sql`, nested grouping supported; directory database drives both Glue schema lookup and runtime execution context
-- Config: `aathena.config.json` with `database` (required), `region`, `workgroup`, `outputLocation`, `tablesDir`, `outDir`, `codegen.indent` (default `2`, matches Prettier and the broader TS ecosystem; clamped to `[1, 8]`), `query.timeout/pollingInterval/maxPollingInterval`, `maxConcurrency` (all optional)
-- `@aws-sdk/client-service-quotas` is an optional dependency used by `parallel({ concurrency: 'auto' })`; loaded via dynamic import so it costs nothing when unused
-- IAM: runtime needs Athena start/get/results + S3 read/write; init needs `glue:GetDatabases/GetTables/GetTable`, `athena:ListWorkGroups/GetWorkGroup`; `parallel` auto mode optionally needs `servicequotas:GetServiceQuota`
-- Dual CJS/ESM build via tsup
-- Node.js >= 20 required
+- [GitHub repository](https://github.com/bug3/aathena)
+- [npm package](https://www.npmjs.com/package/aathena)

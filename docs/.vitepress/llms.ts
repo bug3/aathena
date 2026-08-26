@@ -93,10 +93,18 @@ export interface LlmsOptions {
   optional: SidebarLink[];
 }
 
-/** Writes the Markdown mirrors and the routing index into the build output. */
-export function writeLlmsArtifacts(options: LlmsOptions): string[] {
+/**
+ * Writes the Markdown mirrors into the build output and returns the routing
+ * index, which the caller writes wherever it belongs. The same bytes are
+ * served from the site root and committed at the repository root, so
+ * `llms.txt` means one thing in both places.
+ */
+export function writeLlmsArtifacts(options: LlmsOptions): {
+  index: string;
+  mirrors: string[];
+} {
   const { srcDir, outDir, baseUrl, sidebar } = options;
-  const written: string[] = [];
+  const mirrors: string[] = [];
   const sections: string[] = [];
 
   for (const group of sidebar) {
@@ -107,7 +115,7 @@ export function writeLlmsArtifacts(options: LlmsOptions): string[] {
       const target = join(outDir, `${item.link}.md`);
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, toMarkdown(source, srcDir), 'utf-8');
-      written.push(target);
+      mirrors.push(target);
 
       const note = description(source);
       lines.push(`- [${item.text}](${baseUrl}${item.link.slice(1)}.md)${note ? `: ${note}` : ''}`);
@@ -131,7 +139,5 @@ export function writeLlmsArtifacts(options: LlmsOptions): string[] {
     '',
   ].join('\n');
 
-  writeFileSync(join(outDir, 'llms.txt'), index, 'utf-8');
-  written.push(join(outDir, 'llms.txt'));
-  return written;
+  return { index, mirrors };
 }
