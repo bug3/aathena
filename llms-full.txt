@@ -176,6 +176,7 @@ tests/
   type-map.test.ts
   view-parsing.test.ts
 .gitignore
+context7.json
 eslint.config.mjs
 LICENSE
 llms.txt
@@ -7799,6 +7800,41 @@ playground/
 
 # VitePress (build output already matches the bare `dist/` rule above)
 docs/.vitepress/cache/
+````
+
+## File: context7.json
+````json
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "aathena",
+  "description": "Type-safe Amazon Athena client and AWS Glue code generator for TypeScript.",
+  "folders": [],
+  "excludeFolders": [
+    "dist",
+    "node_modules",
+    "scripts",
+    "src",
+    "tests",
+    ".github"
+  ],
+  "excludeFiles": [
+    "llms-full.txt",
+    "package-lock.json",
+    "eslint.config.mjs",
+    "tsup.config.ts",
+    "vitest.config.ts",
+    "Makefile"
+  ],
+  "rules": [
+    "Column names come from the AWS Glue catalog verbatim. Access them exactly as the table declares them, for example row.event_id, never row.eventId.",
+    "Only partition keys are NOT NULL. Every regular column is typed T | null, so guard struct and array access: row.address?.city, not row.address.city.",
+    "Import the generated query functions from the generated barrel and call them. Do not hand-write createQuery calls; run `aathena add` and `aathena generate` instead.",
+    "parallel() takes thunks, not promises: parallel([() => byStatus(client, params)], { concurrency: 'auto', client }).",
+    "SQL placeholders are {{name}}. Declare parameter types with -- @param annotations in the SQL file, which validate before the query is submitted.",
+    "Never hardcode AWS credentials. createClient() reads aathena.config.json and resolves credentials through the standard AWS SDK chain."
+  ],
+  "previousVersions": []
+}
 ````
 
 ## File: eslint.config.mjs
