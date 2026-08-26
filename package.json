@@ -43,6 +43,7 @@
     "typecheck:examples": "for d in examples/*/; do [ -f \"$d/tsconfig.json\" ] || { echo \"missing tsconfig: $d\" >&2; exit 1; }; echo \"typecheck $d\"; tsc -p \"$d/tsconfig.json\" --noEmit || exit 1; done",
     "typecheck:docs": "tsc -p docs/snippets/tsconfig.json --noEmit",
     "check:snippets": "node scripts/check-doc-snippets.mjs",
+    "check:placeholders": "node scripts/check-docs-placeholders.mjs",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",

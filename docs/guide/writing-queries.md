@@ -3,7 +3,7 @@
 Queries stay SQL. A file under `tables/{database}/{table}/{name}.sql` becomes
 one exported function, and its parameters are typed from the SQL itself.
 
-Placeholders use `{{name}}` syntax.
+Placeholders use <code v-pre>{{name}}</code> syntax.
 
 ## Inferred parameter types
 
@@ -17,8 +17,9 @@ WHERE price >= {{minPrice}}    -- comparison       -> number
 
 Anything the parser cannot place falls back to `string`.
 
-The placeholder name is free. Scaffolded SQL uses `{{rowLimit}}` and
-`{{skip}}` rather than `{{limit}}` and `{{offset}}`, because SQL formatters
+The placeholder name is free. Scaffolded SQL uses <code v-pre>{{rowLimit}}</code>
+and <code v-pre>{{skip}}</code> rather than <code v-pre>{{limit}}</code> and
+<code v-pre>{{offset}}</code>, because SQL formatters
 otherwise mistake the placeholder for the keyword it follows.
 
 ## Declared parameter types
