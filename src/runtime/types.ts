@@ -1,3 +1,4 @@
+// #region config
 export interface AathenaConfig {
   region?: string;
   database: string;
@@ -21,6 +22,7 @@ export interface AathenaConfig {
   // the region-based fallback table.
   maxConcurrency?: number;
 }
+// #endregion config
 
 export interface QueryRuntimeRows {
   inputRows?: number;
