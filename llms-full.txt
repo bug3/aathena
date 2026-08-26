@@ -288,13 +288,48 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: write # gh release create
+  id-token: write # OIDC token for npm trusted publishing
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # Trusted publishing needs npm >= 11.5.1. Node 22 still ships npm 10.9,
+      # so the release runs on 24, which ships 11.19. This is deliberately not
+      # the CI test matrix: what is published is `dist/`, and `smoke:pack`
+      # already checks the packed artifact on both tested versions.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - run: npm ci
+
+      # A version number cannot be reused on npm, not even after unpublish, so
+      # a tag that disagrees with package.json has to fail before anything is
+      # sent rather than after.
+      - name: Tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json version ${PKG}" >&2
+            exit 1
+          fi
+          echo "publishing ${PKG}"
+
+      # No NPM_TOKEN. OIDC supplies a short-lived credential, and npm attaches
+      # a provenance attestation automatically when publishing this way.
+      # `prepublishOnly` runs lint, tests, the example and documentation
+      # checks, the build and the packed-tarball smoke test first.
+      - run: npm publish
+
+      # After the publish, so a release never announces a version that is not
+      # on npm.
       - run: gh release create ${{ github.ref_name }} --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -7806,6 +7841,8 @@ docs/.vitepress/cache/
 ````json
 {
   "$schema": "https://context7.com/schema/context7.json",
+  "url": "https://context7.com/bug3/aathena",
+  "public_key": "pk_I15Rd9g9hO1pZBfoCC43O",
   "projectTitle": "aathena",
   "description": "Type-safe Amazon Athena client and AWS Glue code generator for TypeScript.",
   "folders": [],
@@ -7954,7 +7991,10 @@ release-major:
 	git push --follow-tags
 
 publish:
-	npm publish
+	@echo "Publishing happens in CI, on a pushed v* tag." >&2
+	@echo "A local 'npm publish' would need a write token and would ship" >&2
+	@echo "without a provenance attestation. Use 'make release-patch' etc." >&2
+	@exit 1
 ````
 
 ## File: package.json
