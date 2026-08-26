@@ -41,6 +41,9 @@
     "test:watch": "vitest",
     "lint": "eslint src/ tests/",
     "typecheck:examples": "for d in examples/*/; do [ -f \"$d/tsconfig.json\" ] || { echo \"missing tsconfig: $d\" >&2; exit 1; }; echo \"typecheck $d\"; tsc -p \"$d/tsconfig.json\" --noEmit || exit 1; done",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
     "smoke:pack": "bash scripts/smoke-pack.sh",
     "prepublishOnly": "npm run lint && npm test && npm run typecheck:examples && npm run build && npm run smoke:pack"
   },
@@ -72,6 +75,7 @@
     "tsup": "^8.5.1",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.58.1",
+    "vitepress": "^1.6.4",
     "vitest": "^3.2.4"
   }
 }
