@@ -1,3 +1,6 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { defineConfig } from 'vitepress';
 
 import { mirroredPages, writeLlmsArtifacts, type SidebarGroup } from './llms';
@@ -99,7 +102,7 @@ export default defineConfig({
   },
 
   buildEnd(siteConfig) {
-    const written = writeLlmsArtifacts({
+    const { index, mirrors } = writeLlmsArtifacts({
       srcDir: siteConfig.srcDir,
       outDir: siteConfig.outDir,
       baseUrl: `${ORIGIN}${BASE}`,
@@ -113,6 +116,11 @@ export default defineConfig({
         { text: 'npm package', link: 'https://www.npmjs.com/package/aathena' },
       ],
     });
-    console.log(`  llms.txt and ${written.length - 1} Markdown mirrors written`);
+    // Served from the site root, and committed at the repository root so it
+    // is visible on GitHub and ships in the tarball. CI fails if the two
+    // diverge, which is the only thing keeping the committed copy honest.
+    writeFileSync(join(siteConfig.outDir, 'llms.txt'), index, 'utf-8');
+    writeFileSync(join(siteConfig.srcDir, '..', 'llms.txt'), index, 'utf-8');
+    console.log(`  llms.txt and ${mirrors.length} Markdown mirrors written`);
   },
 });
