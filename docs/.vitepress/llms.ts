@@ -72,6 +72,17 @@ function description(source: string): string {
   return match ? match[1] : '';
 }
 
+/**
+ * Source paths, relative to `srcDir`, that get a Markdown mirror. Used to
+ * decide which pages may advertise `rel="alternate" type="text/markdown"`:
+ * claiming a mirror that was never written would be worse than claiming none.
+ */
+export function mirroredPages(sidebar: SidebarGroup[]): Set<string> {
+  return new Set(
+    sidebar.flatMap((group) => group.items.map((item) => `${item.link.slice(1)}.md`)),
+  );
+}
+
 export interface LlmsOptions {
   srcDir: string;
   outDir: string;

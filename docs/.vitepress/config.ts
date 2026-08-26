@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitepress';
 
-import { writeLlmsArtifacts, type SidebarGroup } from './llms';
+import { mirroredPages, writeLlmsArtifacts, type SidebarGroup } from './llms';
 
 // Project Pages serve under a path, not the domain root. Every asset URL is
 // resolved against this, so it must match the repository name.
@@ -32,6 +32,8 @@ const SIDEBAR: SidebarGroup[] = [
       ],
     },
 ];
+
+const MIRRORED = mirroredPages(SIDEBAR);
 
 export default defineConfig({
   title: 'aathena',
@@ -76,6 +78,24 @@ export default defineConfig({
       message: 'Released under the MIT License.',
       copyright: 'Copyright © bug3',
     },
+  },
+
+  // llms.txt v2 discovery: `describedby` points every page at the routing
+  // index, `alternate` points it at its own Markdown twin. An agent that
+  // landed on the HTML can reach both without guessing a URL.
+  transformHead({ page }) {
+    const head: [string, Record<string, string>][] = [
+      ['link', { rel: 'describedby', href: `${ORIGIN}${BASE}llms.txt` }],
+    ];
+
+    if (MIRRORED.has(page)) {
+      head.push([
+        'link',
+        { rel: 'alternate', type: 'text/markdown', href: `${ORIGIN}${BASE}${page}` },
+      ]);
+    }
+
+    return head;
   },
 
   buildEnd(siteConfig) {
