@@ -26,6 +26,7 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run typecheck:examples
+      - run: npm run check:type-docs
       - run: npm run smoke:pack
       - run: npm run typecheck:docs
       - run: npm run check:snippets
