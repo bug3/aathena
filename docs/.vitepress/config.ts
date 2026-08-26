@@ -1,9 +1,37 @@
 import { defineConfig } from 'vitepress';
 
+import { writeLlmsArtifacts, type SidebarGroup } from './llms';
+
 // Project Pages serve under a path, not the domain root. Every asset URL is
 // resolved against this, so it must match the repository name.
 const BASE = '/aathena/';
 const ORIGIN = 'https://bug3.github.io';
+
+
+// One source for the sidebar, the nav and the llms.txt router. A page added
+// here is a page the router knows about.
+const SIDEBAR: SidebarGroup[] = [
+    {
+      text: 'Guide',
+      items: [
+        { text: 'Getting started', link: '/guide/getting-started' },
+        { text: 'Writing queries', link: '/guide/writing-queries' },
+        { text: 'Running queries', link: '/guide/running-queries' },
+        { text: 'Partitions and views', link: '/guide/partitions' },
+      ],
+    },
+    {
+      text: 'Reference',
+      items: [
+        { text: 'API surface', link: '/reference/api' },
+        { text: 'Configuration', link: '/reference/configuration' },
+        { text: 'Type mapping', link: '/reference/type-mapping' },
+        { text: 'Generated code', link: '/reference/generated-code' },
+        { text: 'Query statistics', link: '/reference/query-statistics' },
+        { text: 'CLI', link: '/reference/cli' },
+      ],
+    },
+];
 
 export default defineConfig({
   title: 'aathena',
@@ -33,28 +61,7 @@ export default defineConfig({
       { text: 'npm', link: 'https://www.npmjs.com/package/aathena' },
     ],
 
-    sidebar: [
-      {
-        text: 'Guide',
-        items: [
-          { text: 'Getting started', link: '/guide/getting-started' },
-          { text: 'Writing queries', link: '/guide/writing-queries' },
-          { text: 'Running queries', link: '/guide/running-queries' },
-          { text: 'Partitions and views', link: '/guide/partitions' },
-        ],
-      },
-      {
-        text: 'Reference',
-        items: [
-          { text: 'API surface', link: '/reference/api' },
-          { text: 'Configuration', link: '/reference/configuration' },
-          { text: 'Type mapping', link: '/reference/type-mapping' },
-          { text: 'Generated code', link: '/reference/generated-code' },
-          { text: 'Query statistics', link: '/reference/query-statistics' },
-          { text: 'CLI', link: '/reference/cli' },
-        ],
-      },
-    ],
+    sidebar: SIDEBAR,
 
     socialLinks: [{ icon: 'github', link: 'https://github.com/bug3/aathena' }],
 
@@ -69,5 +76,23 @@ export default defineConfig({
       message: 'Released under the MIT License.',
       copyright: 'Copyright © bug3',
     },
+  },
+
+  buildEnd(siteConfig) {
+    const written = writeLlmsArtifacts({
+      srcDir: siteConfig.srcDir,
+      outDir: siteConfig.outDir,
+      baseUrl: `${ORIGIN}${BASE}`,
+      summary:
+        'Type-safe Amazon Athena client and AWS Glue code generator for TypeScript.',
+      details:
+        'aathena reads your AWS Glue catalog and generates one typed TypeScript function per SQL file. Column names and types come from the catalog verbatim, parameters are validated before the query is submitted, and Parquet/ORC arrays, maps and structs are parsed back recursively.',
+      sidebar: SIDEBAR,
+      optional: [
+        { text: 'GitHub repository', link: 'https://github.com/bug3/aathena' },
+        { text: 'npm package', link: 'https://www.npmjs.com/package/aathena' },
+      ],
+    });
+    console.log(`  llms.txt and ${written.length - 1} Markdown mirrors written`);
   },
 });
