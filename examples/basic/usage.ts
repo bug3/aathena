@@ -4,8 +4,8 @@
  * After running `npx aathena generate`, the generated/ directory contains
  * typed query functions you can import and call directly.
  *
- * This file won't compile as-is (generated/ doesn't exist in the repo),
- * but it shows the API you get after codegen.
+ * The generated/ directory is committed here and typechecked in CI, so this
+ * file compiles against the same output `aathena generate` produces.
  */
 
 import { createClient, QueryTimeoutError, QueryFailedError } from 'aathena';
