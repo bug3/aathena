@@ -8,9 +8,10 @@
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
-      "aathena": ["../../src/index.ts"],
-      "aathena/runtime": ["../../src/runtime/index.ts"]
+      "aathena": ["../src/index.ts"],
+      "aathena/runtime": ["../src/runtime/index.ts"]
     }
   },
-  "include": ["."]
+  "include": ["snippets", ".vitepress/*.ts"],
+  "exclude": [".vitepress/dist", ".vitepress/cache"]
 }
