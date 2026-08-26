@@ -522,8 +522,8 @@ LIMIT {{rowLimit}}
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
-      "aathena": ["../src/index.ts"],
-      "aathena/runtime": ["../src/runtime/index.ts"]
+      "aathena": ["../../src/index.ts"],
+      "aathena/runtime": ["../../src/runtime/index.ts"]
     }
   },
   "include": [".", "generated"]
@@ -752,8 +752,8 @@ for (const row of result.rows) {
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
-      "aathena": ["../src/index.ts"],
-      "aathena/runtime": ["../src/runtime/index.ts"]
+      "aathena": ["../../src/index.ts"],
+      "aathena/runtime": ["../../src/runtime/index.ts"]
     }
   },
   "include": ["src"]
