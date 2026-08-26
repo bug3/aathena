@@ -4,6 +4,14 @@ import type { AathenaConfig } from './types';
 
 const CONFIG_FILE = 'aathena.config.json';
 
+/**
+ * Identity function that types `aathena.config.json` when you build it in
+ * TypeScript instead of writing JSON:
+ *
+ * ```typescript
+ * export default defineConfig({ database: 'sampledb', region: 'eu-west-1' });
+ * ```
+ */
 export function defineConfig(config: AathenaConfig): AathenaConfig {
   return config;
 }

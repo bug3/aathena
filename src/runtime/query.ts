@@ -6,6 +6,7 @@ import { findProjectRoot } from './config';
 // sql-render is used internally for template rendering
 import { defineQuery as sqlRenderDefine, schema as sqlRenderSchema } from 'sql-render';
 
+/** Per-call options forwarded to the SQL renderer. */
 export interface RenderOptions {
   /**
    * Write the rendered SQL (with parameter values substituted) to this path
@@ -16,12 +17,17 @@ export interface RenderOptions {
   exportTo?: string;
 }
 
+/**
+ * The shape every generated query function has: a client, its typed
+ * parameters, and optional per-call render options.
+ */
 type QueryFn<TResult, TParams> = (
   client: AathenaClient,
   params: TParams,
   options?: RenderOptions,
 ) => Promise<QueryResult<TResult>>;
 
+/** Options bound once, when the query function is created. */
 export interface CreateQueryOptions {
   /**
    * Execution context database for this query. Takes precedence over
@@ -31,6 +37,42 @@ export interface CreateQueryOptions {
   database?: string;
 }
 
+/**
+ * Binds a SQL template to its result and parameter types, returning the
+ * function you call.
+ *
+ * You do not normally write this. `aathena add` scaffolds the SQL and
+ * `aathena generate` emits one `createQuery` call per file, with the types
+ * read from your Glue catalog. Import the generated function instead:
+ *
+ * ```typescript
+ * import { createClient } from 'aathena';
+ * import { byStatus } from './generated';
+ *
+ * const athena = createClient();
+ * const result = await byStatus(athena, { status: 'active', rowLimit: 99 });
+ * ```
+ *
+ * Hand-writing it is supported for queries that live outside the `tables/`
+ * tree, but then the types are yours to keep correct:
+ *
+ * ```typescript
+ * import { createQuery, schema } from 'aathena/runtime';
+ *
+ * const recent = createQuery<{ id: bigint | null }, { rowLimit: number }>(
+ *   'sql/recent.sql',
+ *   { rowLimit: schema.positiveInt },
+ * );
+ * ```
+ *
+ * @param sqlPath Path to the `.sql` file. Relative paths resolve from the
+ *   project root, found by walking up to `aathena.config.json`; absolute
+ *   paths skip that lookup.
+ * @param schemaDef Validators per parameter, checked before the query is
+ *   submitted rather than after Athena has billed for the scan.
+ * @param options Binds the execution database when it differs from the
+ *   project's primary one.
+ */
 export function createQuery<TResult, TParams = Record<string, never>>(
   sqlPath: string,
   schemaDef?: Record<string, { validate(val: unknown): boolean }>,
