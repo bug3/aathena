@@ -29,7 +29,7 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
-      { text: 'Reference', link: '/reference/configuration' },
+      { text: 'Reference', link: '/reference/api' },
       { text: 'npm', link: 'https://www.npmjs.com/package/aathena' },
     ],
 
@@ -40,14 +40,17 @@ export default defineConfig({
           { text: 'Getting started', link: '/guide/getting-started' },
           { text: 'Writing queries', link: '/guide/writing-queries' },
           { text: 'Running queries', link: '/guide/running-queries' },
+          { text: 'Partitions and views', link: '/guide/partitions' },
         ],
       },
       {
         text: 'Reference',
         items: [
+          { text: 'API surface', link: '/reference/api' },
           { text: 'Configuration', link: '/reference/configuration' },
           { text: 'Type mapping', link: '/reference/type-mapping' },
           { text: 'Generated code', link: '/reference/generated-code' },
+          { text: 'Query statistics', link: '/reference/query-statistics' },
           { text: 'CLI', link: '/reference/cli' },
         ],
       },

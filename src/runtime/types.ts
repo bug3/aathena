@@ -31,6 +31,7 @@ export interface QueryRuntimeRows {
   outputBytes?: number;
 }
 
+// #region statistics
 export interface QueryStatistics {
   // Timing (milliseconds). Athena always reports these on a successful query.
   engineExecutionTimeInMillis: number;
@@ -48,6 +49,7 @@ export interface QueryStatistics {
   // Populated only when query() is called with { includeRuntimeStats: true }
   runtime?: QueryRuntimeRows;
 }
+// #endregion statistics
 
 export interface QueryOptions {
   // Issue an extra GetQueryRuntimeStatistics call and surface input/output row counts.

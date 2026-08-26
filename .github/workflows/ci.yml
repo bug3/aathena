@@ -29,4 +29,5 @@ jobs:
       - run: npm run smoke:pack
       - run: npm run typecheck:docs
       - run: npm run check:snippets
+      - run: npm run check:placeholders
       - run: npm run docs:build
