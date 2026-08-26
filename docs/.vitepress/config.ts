@@ -41,7 +41,7 @@ const MIRRORED = mirroredPages(SIDEBAR);
 export default defineConfig({
   title: 'aathena',
   description:
-    'Type-safe Amazon Athena client and AWS Glue code generator for TypeScript.',
+    'Type-safe AWS Athena client.',
   base: BASE,
   lastUpdated: true,
 
@@ -107,7 +107,7 @@ export default defineConfig({
       outDir: siteConfig.outDir,
       baseUrl: `${ORIGIN}${BASE}`,
       summary:
-        'Type-safe Amazon Athena client and AWS Glue code generator for TypeScript.',
+        'Type-safe AWS Athena client.',
       details:
         'aathena reads your AWS Glue catalog and generates one typed TypeScript function per SQL file. Column names and types come from the catalog verbatim, parameters are validated before the query is submitted, and Parquet/ORC arrays, maps and structs are parsed back recursively.',
       sidebar: SIDEBAR,
