@@ -26,3 +26,4 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run typecheck:examples
+      - run: npm run smoke:pack
