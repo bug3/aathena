@@ -41,7 +41,8 @@
     "test:watch": "vitest",
     "lint": "eslint src/ tests/",
     "typecheck:examples": "for d in examples/*/; do [ -f \"$d/tsconfig.json\" ] || { echo \"missing tsconfig: $d\" >&2; exit 1; }; echo \"typecheck $d\"; tsc -p \"$d/tsconfig.json\" --noEmit || exit 1; done",
-    "prepublishOnly": "npm run lint && npm test && npm run typecheck:examples && npm run build"
+    "smoke:pack": "bash scripts/smoke-pack.sh",
+    "prepublishOnly": "npm run lint && npm test && npm run typecheck:examples && npm run build && npm run smoke:pack"
   },
   "keywords": [
     "athena",
