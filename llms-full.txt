@@ -38,8 +38,18 @@ The content is organized as follows:
 .github/
   workflows/
     ci.yml
+    pages.yml
     release.yml
     repomix.yml
+docs/
+  .vitepress/
+    config.ts
+  snippets/
+    generated.ts
+    run-a-query.ts
+    tsconfig.json
+    typed-rows.ts
+  index.md
 examples/
   basic/
     generated/
@@ -49,6 +59,8 @@ examples/
             by-date-range.ts
             by-status.ts
             total-revenue.ts
+          orders/
+            detail.ts
           products/
             by-category.ts
           users/
@@ -56,6 +68,7 @@ examples/
       types/
         sampledb/
           events.ts
+          orders.ts
           products.ts
           users.ts
       index.ts
@@ -65,6 +78,8 @@ examples/
           by-date-range.sql
           by-status.sql
           total-revenue.sql
+        orders/
+          detail.sql
         products/
           by-category.sql
         users/
@@ -93,6 +108,7 @@ examples/
     aathena.config.json
     tsconfig.json
 scripts/
+  check-doc-snippets.mjs
   smoke-pack.sh
 src/
   cli/
@@ -184,6 +200,56 @@ jobs:
       - run: npm test
       - run: npm run typecheck:examples
       - run: npm run smoke:pack
+      - run: npm run typecheck:docs
+      - run: npm run check:snippets
+      - run: npm run docs:build
+````
+
+## File: .github/workflows/pages.yml
+````yaml
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. Queued runs are not cancelled: the last push to
+# main must be the one that ends up published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - run: npm run docs:build
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
 ````
 
 ## File: .github/workflows/release.yml
@@ -239,6 +305,145 @@ jobs:
           fi
           git commit -m "chore: regenerate llms-full.txt"
           git push
+````
+
+## File: docs/.vitepress/config.ts
+````typescript
+import { defineConfig } from 'vitepress';
+
+// Project Pages serve under a path, not the domain root. Every asset URL is
+// resolved against this, so it must match the repository name.
+const BASE = '/aathena/';
+const ORIGIN = 'https://bug3.github.io';
+
+export default defineConfig({
+  title: 'aathena',
+  description:
+    'Type-safe Amazon Athena client and AWS Glue code generator for TypeScript.',
+  base: BASE,
+  lastUpdated: true,
+
+  // GitHub Pages resolves `/guide/` to `/guide/index.html` but does not resolve
+  // `/guide/foo` to `/guide/foo.html`. Clean URLs would 404 in production while
+  // working in `docs:dev`, so they stay off.
+  cleanUrls: false,
+
+  sitemap: { hostname: `${ORIGIN}${BASE}` },
+
+  head: [
+    ['meta', { name: 'author', content: 'bug3' }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:site_name', content: 'aathena' }],
+    ['meta', { property: 'og:url', content: `${ORIGIN}${BASE}` }],
+  ],
+
+  themeConfig: {
+    nav: [
+      { text: 'npm', link: 'https://www.npmjs.com/package/aathena' },
+    ],
+
+    socialLinks: [{ icon: 'github', link: 'https://github.com/bug3/aathena' }],
+
+    editLink: {
+      pattern: 'https://github.com/bug3/aathena/edit/main/docs/:path',
+      text: 'Edit this page on GitHub',
+    },
+
+    search: { provider: 'local' },
+
+    footer: {
+      message: 'Released under the MIT License.',
+      copyright: 'Copyright © bug3',
+    },
+  },
+});
+````
+
+## File: docs/snippets/generated.ts
+````typescript
+// Snippets import `./generated`, which is what a real consumer writes after
+// running `aathena generate`. This shim points that path at the example
+// project's committed output, so every documented example is bound to code
+// the generator actually produced and CI already typechecks.
+export * from '../../examples/basic/generated';
+````
+
+## File: docs/snippets/run-a-query.ts
+````typescript
+import { createClient } from 'aathena';
+import { byStatus } from './generated';
+
+const athena = createClient();
+const result = await byStatus(athena, { status: 'active', rowLimit: 99 });
+````
+
+## File: docs/snippets/tsconfig.json
+````json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "paths": {
+      "aathena": ["../../src/index.ts"],
+      "aathena/runtime": ["../../src/runtime/index.ts"]
+    }
+  },
+  "include": ["."]
+}
+````
+
+## File: docs/snippets/typed-rows.ts
+````typescript
+// Glue: order_id bigint, placed_at timestamp, tags array<varchar>,
+// metadata map<string,int>, address struct<city:string>,
+// items array<struct<qty:int>>, partitioned by dt string
+
+import { createClient } from 'aathena';
+import { detail } from './generated';
+
+const athena = createClient();
+const result = await detail(athena, { dt: '2026-08-26', rowLimit: 33 });
+const row = result.rows[0];
+
+row.order_id;        // bigint | null
+row.placed_at;       // Date | null
+row.tags;            // string[] | null
+row.metadata;        // Record<string, number> | null
+row.address?.city;   // string | undefined - struct field access
+row.items?.[0].qty;  // number | undefined - nested array of struct
+row.dt;              // string - partition keys are the only NOT NULL columns
+````
+
+## File: docs/index.md
+````markdown
+---
+layout: home
+
+hero:
+  name: aathena
+  text: Type-safe Athena for TypeScript
+  tagline: Generate typed query functions from your AWS Glue catalog, then call them like ordinary functions.
+  actions:
+    - theme: brand
+      text: npm install aathena
+      link: https://www.npmjs.com/package/aathena
+    - theme: alt
+      text: View on GitHub
+      link: https://github.com/bug3/aathena
+
+features:
+  - title: Types come from the catalog
+    details: Column names and types are read from AWS Glue and emitted verbatim, so a row object matches the table it came from - no hand-written interfaces to drift.
+  - title: Queries stay SQL
+    details: Write ordinary SQL with typed placeholders. Parameters are validated before the query is submitted, not after Athena has billed for the scan.
+  - title: One generated function per query
+    details: Each .sql file becomes an exported function with a typed parameter object and a typed result, discoverable through autocomplete.
+---
 ````
 
 ## File: examples/basic/generated/queries/sampledb/events/by-date-range.ts
@@ -309,6 +514,31 @@ export const totalRevenue = createQuery<Events, Record<string, never>>(
 );
 ````
 
+## File: examples/basic/generated/queries/sampledb/orders/detail.ts
+````typescript
+// Auto-generated by aathena
+
+// Source: tables/sampledb/orders/detail.sql
+
+import { createQuery, schema } from 'aathena/runtime';
+import type { Orders } from '../../../types/sampledb/orders';
+
+export interface DetailParams {
+  dt: string;
+  rowLimit: number;
+}
+
+const schemaDef = {
+  dt: schema.string,
+  rowLimit: schema.positiveInt,
+};
+
+export const detail = createQuery<Orders, DetailParams>(
+  'tables/sampledb/orders/detail.sql',
+  schemaDef,
+);
+````
+
 ## File: examples/basic/generated/queries/sampledb/products/by-category.ts
 ````typescript
 // Auto-generated by aathena
@@ -374,6 +604,23 @@ export interface Events {
 }
 ````
 
+## File: examples/basic/generated/types/sampledb/orders.ts
+````typescript
+// Auto-generated by aathena
+
+// Source: sampledb.orders
+
+export interface Orders {
+  order_id: bigint | null; // JS BigInt
+  placed_at: Date | null;
+  tags: string[] | null; // array<varchar>
+  metadata: Record<string, number> | null; // map<string,int>
+  address: { city: string } | null; // struct<city:string>
+  items: { qty: number }[] | null; // array<struct<qty:int>>
+  dt: string;
+}
+````
+
 ## File: examples/basic/generated/types/sampledb/products.ts
 ````typescript
 // Auto-generated by aathena
@@ -411,6 +658,7 @@ export interface Users {
 
 // Types
 export type { Events } from './types/sampledb/events';
+export type { Orders } from './types/sampledb/orders';
 export type { Products } from './types/sampledb/products';
 export type { Users } from './types/sampledb/users';
 
@@ -418,6 +666,7 @@ export type { Users } from './types/sampledb/users';
 export { byDateRange } from './queries/sampledb/events/by-date-range';
 export { byStatus } from './queries/sampledb/events/by-status';
 export { totalRevenue } from './queries/sampledb/events/total-revenue';
+export { detail } from './queries/sampledb/orders/detail';
 export { byCategory } from './queries/sampledb/products/by-category';
 export { active } from './queries/sampledb/users/active';
 ````
@@ -470,6 +719,23 @@ FROM events
 WHERE status = 'active'
 GROUP BY DATE(created_at)
 ORDER BY day DESC
+````
+
+## File: examples/basic/tables/sampledb/orders/detail.sql
+````sql
+-- Complex Glue types: arrays, maps and structs come back parsed, recursively.
+--
+-- Note which columns are nullable. Athena guarantees NOT NULL only for
+-- partition keys, so `dt` is the one column typed without `| null`.
+--
+-- '{{dt}}'       → string  (quoted)
+-- {{rowLimit}}   → number  (LIMIT keyword)
+
+SELECT order_id, placed_at, tags, metadata, address, items, dt
+FROM orders
+WHERE dt = '{{dt}}'
+ORDER BY placed_at DESC
+LIMIT {{rowLimit}}
 ````
 
 ## File: examples/basic/tables/sampledb/products/by-category.sql
@@ -538,8 +804,8 @@ LIMIT {{rowLimit}}
  * After running `npx aathena generate`, the generated/ directory contains
  * typed query functions you can import and call directly.
  *
- * This file won't compile as-is (generated/ doesn't exist in the repo),
- * but it shows the API you get after codegen.
+ * The generated/ directory is committed here and typechecked in CI, so this
+ * file compiles against the same output `aathena generate` produces.
  */
 
 import { createClient, QueryTimeoutError, QueryFailedError } from 'aathena';
@@ -758,6 +1024,81 @@ for (const row of result.rows) {
   },
   "include": ["src"]
 }
+````
+
+## File: scripts/check-doc-snippets.mjs
+````javascript
+// Asserts that every code block in README.md marked with a snippet comment is
+// byte-for-byte the corresponding file under docs/snippets/.
+//
+// Those files are typechecked by `typecheck:docs` against the real source and
+// the example project's generated output, so binding the README to them is
+// what stops a documented example from drifting away from what the generator
+// emits. A README block claiming `row.eventId` when the generator writes
+// `row.event_id` is the defect this check exists to make impossible.
+//
+// Usage in README.md:
+//
+//     <!-- snippet: run-a-query.ts -->
+//     ```typescript
+//     ...exact contents of docs/snippets/run-a-query.ts...
+//     ```
+
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+const README = join(REPO, 'README.md');
+const SNIPPET_DIR = join(REPO, 'docs', 'snippets');
+const MARKER = /^<!-- snippet: ([\w.-]+) -->$/;
+
+const lines = readFileSync(README, 'utf8').split('\n');
+const failures = [];
+let checked = 0;
+
+for (let i = 0; i < lines.length; i++) {
+  const match = lines[i].match(MARKER);
+  if (!match) continue;
+
+  const name = match[1];
+  const where = `README.md:${i + 1}`;
+
+  if (!lines[i + 1]?.startsWith('```')) {
+    failures.push(`${where}: marker for ${name} is not followed by a code fence`);
+    continue;
+  }
+
+  let end = i + 2;
+  while (end < lines.length && !lines[end].startsWith('```')) end++;
+  if (end >= lines.length) {
+    failures.push(`${where}: unterminated code fence after the ${name} marker`);
+    continue;
+  }
+
+  const file = join(SNIPPET_DIR, name);
+  if (!existsSync(file)) {
+    failures.push(`${where}: no such snippet, docs/snippets/${name}`);
+    continue;
+  }
+
+  checked++;
+  const block = lines.slice(i + 2, end).join('\n');
+  const source = readFileSync(file, 'utf8').replace(/\n+$/, '');
+  if (block !== source) {
+    failures.push(`${where}: block does not match docs/snippets/${name}`);
+  }
+}
+
+// Guards the markers themselves: without this, deleting every marker would
+// leave the check passing on an unbound README.
+if (checked === 0) {
+  failures.push('README.md contains no snippet markers');
+}
+
+for (const failure of failures) console.error(`  ${failure}`);
+console.log(`checked ${checked} README snippet(s) against docs/snippets/`);
+process.exit(failures.length > 0 ? 1 : 0);
 ````
 
 ## File: scripts/smoke-pack.sh
@@ -6130,6 +6471,9 @@ playground/
 
 # Local test artifacts
 *.tgz
+
+# VitePress (build output already matches the bare `dist/` rule above)
+docs/.vitepress/cache/
 ````
 
 ## File: eslint.config.mjs
@@ -6515,8 +6859,13 @@ publish:
     "test:watch": "vitest",
     "lint": "eslint src/ tests/",
     "typecheck:examples": "for d in examples/*/; do [ -f \"$d/tsconfig.json\" ] || { echo \"missing tsconfig: $d\" >&2; exit 1; }; echo \"typecheck $d\"; tsc -p \"$d/tsconfig.json\" --noEmit || exit 1; done",
+    "typecheck:docs": "tsc -p docs/snippets/tsconfig.json --noEmit",
+    "check:snippets": "node scripts/check-doc-snippets.mjs",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
     "smoke:pack": "bash scripts/smoke-pack.sh",
-    "prepublishOnly": "npm run lint && npm test && npm run typecheck:examples && npm run build && npm run smoke:pack"
+    "prepublishOnly": "npm run lint && npm test && npm run typecheck:examples && npm run check:snippets && npm run build && npm run smoke:pack"
   },
   "keywords": [
     "athena",
@@ -6546,6 +6895,7 @@ publish:
     "tsup": "^8.5.1",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.58.1",
+    "vitepress": "^1.6.4",
     "vitest": "^3.2.4"
   }
 }
@@ -6594,18 +6944,26 @@ If any scaffolded query needs partition values, `main.ts` passes `REPLACE_ME` pl
 
 Every row is typed 1:1 against your Glue schema. Scalars land as native TypeScript (`Date` for timestamps, `bigint`, `number`, `string`), and Parquet/ORC arrays, maps, and structs parse back recursively - even nested. Hover any field in your editor to see the exact column type, with no `CAST()` in SQL and no manual `JSON.parse`:
 
+<!-- snippet: typed-rows.ts -->
 ```typescript
-// Glue: event_id bigint, created_at timestamp, tags array<varchar>, metadata map<string,int>, address struct<city:string>, items array<struct<qty:int>>
+// Glue: order_id bigint, placed_at timestamp, tags array<varchar>,
+// metadata map<string,int>, address struct<city:string>,
+// items array<struct<qty:int>>, partitioned by dt string
 
-const result = await getEvents(athena, { rowLimit: 33 });
+import { createClient } from 'aathena';
+import { detail } from './generated';
+
+const athena = createClient();
+const result = await detail(athena, { dt: '2026-08-26', rowLimit: 33 });
 const row = result.rows[0];
 
-row.event_id;        // bigint
-row.created_at;      // Date
-row.tags;            // string[]
-row.metadata;        // Record<string, number>
-row.address.city;    // string - direct struct field access
-row.items[0].qty;    // number - nested array of struct
+row.order_id;        // bigint | null
+row.placed_at;       // Date | null
+row.tags;            // string[] | null
+row.metadata;        // Record<string, number> | null
+row.address?.city;   // string | undefined - struct field access
+row.items?.[0].qty;  // number | undefined - nested array of struct
+row.dt;              // string - partition keys are the only NOT NULL columns
 ```
 
 ## Write Queries
@@ -6647,12 +7005,13 @@ See [`@param` types](#param-types) in Reference for the full annotation list.
 
 Every generated query accepts a client and its typed parameters:
 
+<!-- snippet: run-a-query.ts -->
 ```typescript
 import { createClient } from 'aathena';
-import { eventsDefault } from './generated';
+import { byStatus } from './generated';
 
 const athena = createClient();
-const result = await eventsDefault(athena, { status: 'active', rowLimit: 99 });
+const result = await byStatus(athena, { status: 'active', rowLimit: 99 });
 ```
 
 `createClient()` reads `aathena.config.json` automatically; pass an explicit config to override (`createClient({ region: 'us-east-1', database: 'analytics' })`) - useful in tests or when the project root isn't on disk.
