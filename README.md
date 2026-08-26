@@ -92,12 +92,13 @@ See [`@param` types](#param-types) in Reference for the full annotation list.
 
 Every generated query accepts a client and its typed parameters:
 
+<!-- snippet: run-a-query.ts -->
 ```typescript
 import { createClient } from 'aathena';
-import { eventsDefault } from './generated';
+import { byStatus } from './generated';
 
 const athena = createClient();
-const result = await eventsDefault(athena, { status: 'active', rowLimit: 99 });
+const result = await byStatus(athena, { status: 'active', rowLimit: 99 });
 ```
 
 `createClient()` reads `aathena.config.json` automatically; pass an explicit config to override (`createClient({ region: 'us-east-1', database: 'analytics' })`) - useful in tests or when the project root isn't on disk.
