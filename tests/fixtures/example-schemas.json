@@ -1,0 +1,64 @@
+{
+  "_comment": "Glue schemas behind examples/*/generated/**. These are authored, not fetched: the example projects point at tables that do not exist in any real catalog. Their job is to pin generator output, so examples-generated.test.ts can regenerate every committed file and diff it. Change a schema only together with the files it produces.",
+  "examples/basic": {
+    "sampledb.events": {
+      "database": "sampledb",
+      "tableName": "events",
+      "columns": [
+        { "name": "event_id", "type": "int", "nullable": false },
+        { "name": "event_name", "type": "varchar", "nullable": true },
+        { "name": "status", "type": "varchar", "nullable": true },
+        { "name": "price", "type": "decimal", "nullable": true },
+        { "name": "created_at", "type": "timestamp", "nullable": true }
+      ]
+    },
+    "sampledb.orders": {
+      "database": "sampledb",
+      "tableName": "orders",
+      "columns": [
+        { "name": "order_id", "type": "bigint", "nullable": true },
+        { "name": "placed_at", "type": "timestamp", "nullable": true },
+        { "name": "tags", "type": "array<varchar>", "nullable": true },
+        { "name": "metadata", "type": "map<string,int>", "nullable": true },
+        { "name": "address", "type": "struct<city:string>", "nullable": true },
+        { "name": "items", "type": "array<struct<qty:int>>", "nullable": true },
+        { "name": "dt", "type": "string", "nullable": false }
+      ]
+    },
+    "sampledb.products": {
+      "database": "sampledb",
+      "tableName": "products",
+      "columns": [
+        { "name": "product_id", "type": "int", "nullable": false },
+        { "name": "name", "type": "varchar", "nullable": true },
+        { "name": "category", "type": "varchar", "nullable": true },
+        { "name": "tags", "type": "array<varchar>", "nullable": true },
+        { "name": "attributes", "type": "map<string,string>", "nullable": true },
+        { "name": "shipping_address", "type": "struct<city:string,zip:integer,country:string>", "nullable": true }
+      ]
+    },
+    "sampledb.users": {
+      "database": "sampledb",
+      "tableName": "users",
+      "columns": [
+        { "name": "user_id", "type": "int", "nullable": false },
+        { "name": "username", "type": "varchar", "nullable": true },
+        { "name": "email", "type": "varchar", "nullable": true },
+        { "name": "age", "type": "int", "nullable": true },
+        { "name": "is_active", "type": "boolean", "nullable": true }
+      ]
+    }
+  },
+  "examples/custom-paths": {
+    "analytics.pageviews": {
+      "database": "analytics",
+      "tableName": "pageviews",
+      "columns": [
+        { "name": "page_url", "type": "varchar", "nullable": true },
+        { "name": "session_id", "type": "varchar", "nullable": true },
+        { "name": "view_count", "type": "int", "nullable": false },
+        { "name": "created_at", "type": "timestamp", "nullable": true }
+      ]
+    }
+  }
+}

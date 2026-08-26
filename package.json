@@ -42,6 +42,7 @@
     "lint": "eslint src/ tests/",
     "typecheck:examples": "for d in examples/*/; do [ -f \"$d/tsconfig.json\" ] || { echo \"missing tsconfig: $d\" >&2; exit 1; }; echo \"typecheck $d\"; tsc -p \"$d/tsconfig.json\" --noEmit || exit 1; done",
     "typecheck:docs": "tsc -p docs/snippets/tsconfig.json --noEmit",
+    "examples:regen": "UPDATE_EXAMPLES=1 vitest run tests/examples-generated.test.ts",
     "check:snippets": "node scripts/check-doc-snippets.mjs",
     "check:placeholders": "node scripts/check-docs-placeholders.mjs",
     "docs:dev": "vitepress dev docs",
