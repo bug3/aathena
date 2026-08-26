@@ -4,6 +4,10 @@ import { parseRow } from './parser';
 import { loadConfig } from './config';
 import type { AathenaConfig, QueryOptions, QueryResult } from './types';
 
+/**
+ * Executes queries against Athena. Build one with {@link createClient} rather
+ * than calling the constructor, so `aathena.config.json` is found for you.
+ */
 export class AathenaClient {
   private readonly athena: AwsAthenaClient;
   private readonly _config: AathenaConfig;
@@ -15,14 +19,38 @@ export class AathenaClient {
     });
   }
 
+  /** The resolved configuration this client was built with. */
   get config(): Readonly<AathenaConfig> {
     return this._config;
   }
 
+  /** The AWS region, or undefined when it is left to the SDK chain. */
   get region(): string | undefined {
     return this._config.region;
   }
 
+  /**
+   * Runs an ad-hoc SQL string. Generated query functions are the typed path;
+   * reach for this when the SQL is built at runtime.
+   *
+   * `StartQueryExecution` is retried with exponential backoff and full jitter
+   * on `TooManyRequestsException` and `CONCURRENT_QUERY_LIMIT_EXCEEDED`, up to
+   * 6 attempts.
+   *
+   * ```typescript
+   * const result = await athena.query<{ id: string }>(
+   *   'SELECT id FROM events LIMIT 10',
+   *   { includeRuntimeStats: true },
+   * );
+   * ```
+   *
+   * @param sql The statement to run. Nothing is escaped for you.
+   * @param options Per-call overrides; see {@link QueryOptions}.
+   * @throws {QueryTimeoutError} when `query.timeout` elapses first.
+   * @throws {QueryFailedError} when Athena reports the query as FAILED.
+   * @throws {QueryCancelledError} when the execution was cancelled.
+   * @throws {ColumnParseError} when a value does not match its column type.
+   */
   async query<T>(sql: string, options: QueryOptions = {}): Promise<QueryResult<T>> {
     const output = await executeQuery(
       this.athena,

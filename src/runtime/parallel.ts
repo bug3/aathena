@@ -5,6 +5,7 @@ import {
   type QuotaKind,
 } from './limits';
 
+/** How {@link parallel} should bound and dispatch its tasks. */
 export interface ParallelOptions {
   /**
    * Max number of tasks running at once.
@@ -37,12 +38,25 @@ export interface ParallelOptions {
   mode?: 'all' | 'allSettled';
 }
 
+/**
+ * A task as {@link parallel} wants it: a function returning a promise, not a
+ * promise. Passing promises would start every query at once, which is the
+ * thing the concurrency cap exists to prevent.
+ */
 type Thunk<R> = () => Promise<R>;
 
+/**
+ * The result of `mode: 'all'`: a tuple of resolved values, positionally
+ * matching the tasks, each keeping its own type.
+ */
 type AwaitedThunkTuple<T extends readonly Thunk<unknown>[]> = {
   -readonly [K in keyof T]: T[K] extends Thunk<infer R> ? R : never;
 };
 
+/**
+ * The result of `mode: 'allSettled'`: a tuple of settlements, so one failing
+ * task does not discard the others' results.
+ */
 type SettledThunkTuple<T extends readonly Thunk<unknown>[]> = {
   -readonly [K in keyof T]: T[K] extends Thunk<infer R>
     ? PromiseSettledResult<R>

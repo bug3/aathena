@@ -10,6 +10,7 @@
  * from https://docs.aws.amazon.com/general/latest/gr/athena.html.
  */
 
+/** Which Athena service quota to probe: DML statements, or DDL. */
 export type QuotaKind = 'dml' | 'ddl';
 
 const DML_DEFAULT_BY_REGION: Record<string, number> = {
