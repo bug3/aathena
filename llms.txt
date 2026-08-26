@@ -1,6 +1,6 @@
 # aathena
 
-> Type-safe Amazon Athena client and AWS Glue code generator for TypeScript.
+> Type-safe AWS Athena client.
 
 aathena reads your AWS Glue catalog and generates one typed TypeScript function per SQL file. Column names and types come from the catalog verbatim, parameters are validated before the query is submitted, and Parquet/ORC arrays, maps and structs are parsed back recursively.
 

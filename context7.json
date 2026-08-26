@@ -3,7 +3,7 @@
   "url": "https://context7.com/bug3/aathena",
   "public_key": "pk_I15Rd9g9hO1pZBfoCC43O",
   "projectTitle": "aathena",
-  "description": "Type-safe Amazon Athena client and AWS Glue code generator for TypeScript.",
+  "description": "Type-safe AWS Athena client.",
   "folders": [],
   "excludeFolders": [
     "dist",
