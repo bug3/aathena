@@ -1,3 +1,7 @@
+---
+description: "What aathena generate writes: export names, query files, the barrel, and cross-database bindings."
+---
+
 # Generated code
 
 Codegen writes three things: one type file per table, one query file per SQL

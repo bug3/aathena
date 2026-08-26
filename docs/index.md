@@ -1,5 +1,6 @@
 ---
 layout: home
+description: "Type-safe Amazon Athena client and AWS Glue code generator for TypeScript. Generate a typed query function from every SQL file."
 
 hero:
   name: aathena

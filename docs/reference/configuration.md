@@ -1,3 +1,7 @@
+---
+description: "Every field of aathena.config.json, its default, and how to override the config at runtime."
+---
+
 # Configuration
 
 `aathena.config.json` lives at your project root and marks it. `init` writes

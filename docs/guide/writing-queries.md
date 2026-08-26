@@ -1,3 +1,7 @@
+---
+description: "Write ordinary SQL with typed placeholders. How parameter types are inferred, and the @param annotations that override them."
+---
+
 # Writing queries
 
 Queries stay SQL. A file under `tables/{database}/{table}/{name}.sql` becomes

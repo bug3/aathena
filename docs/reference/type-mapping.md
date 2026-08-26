@@ -1,3 +1,7 @@
+---
+description: "How Athena and Glue column types map to TypeScript, including arrays, maps, structs, and the partition-key nullability rule."
+---
+
 # Type mapping
 
 Glue column types map 1:1 to TypeScript. Column names are emitted verbatim -

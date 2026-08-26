@@ -1,3 +1,7 @@
+---
+description: "Everything exported from aathena and aathena/runtime: the client, createQuery, parallel, schema, and the error classes."
+---
+
 # API surface
 
 Two entry points export the same surface. `aathena` is what you import;

@@ -1,3 +1,7 @@
+---
+description: "Reference for aathena init, add, and generate, with every flag."
+---
+
 # CLI reference
 
 | Command | Purpose |
