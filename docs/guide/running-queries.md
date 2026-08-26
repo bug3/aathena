@@ -1,3 +1,7 @@
+---
+description: "Call generated query functions, read typed rows, run queries concurrently with parallel(), and handle Athena errors."
+---
+
 # Running queries
 
 Every generated query is a function that takes a client and its typed

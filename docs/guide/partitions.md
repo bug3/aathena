@@ -1,3 +1,7 @@
+---
+description: "How aathena probes Athena partition projection and traces Presto/Trino views so scaffolded SQL carries the required WHERE predicates."
+---
+
 # Partitions and views
 
 Athena tables using partition projection with `type=injected` will not answer

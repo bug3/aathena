@@ -1,3 +1,7 @@
+---
+description: "Install aathena, scaffold a project against your AWS Glue catalog, and run your first typed Athena query."
+---
+
 # Getting started
 
 aathena reads your AWS Glue catalog and generates a typed TypeScript function

@@ -1,3 +1,7 @@
+---
+description: "The statistics block on every QueryResult: timings, bytes scanned, cache hits, and opt-in runtime row counts."
+---
+
 # Query statistics
 
 Every `QueryResult` carries a `statistics` block taken from Athena's
