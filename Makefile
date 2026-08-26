@@ -31,4 +31,7 @@ release-major:
 	git push --follow-tags
 
 publish:
-	npm publish
+	@echo "Publishing happens in CI, on a pushed v* tag." >&2
+	@echo "A local 'npm publish' would need a write token and would ship" >&2
+	@echo "without a provenance attestation. Use 'make release-patch' etc." >&2
+	@exit 1
