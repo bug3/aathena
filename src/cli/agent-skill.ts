@@ -79,6 +79,20 @@ export function writeSkill(cwd: string, contents: string): SkillTarget[] {
 }
 
 /**
+ * Whether init should raise the skill question at all.
+ *
+ * `--no-skill` settles it, and `--skill` answers it without asking. Left unset
+ * it needs a prompt, and a prompt needs someone to answer: a fully flagged init
+ * is otherwise non-interactive, so asking without a TTY would hang a scripted
+ * run. Silence is treated as no, since this writes outside the project's own
+ * source tree and `--skill` is how a script opts in.
+ */
+export function shouldOfferSkill(flag: boolean | undefined, isTTY: boolean): boolean {
+  if (flag !== undefined) return flag;
+  return isTTY;
+}
+
+/**
  * Copy the packaged skill into the project's agent directories.
  *
  * @throws {Error} when the package was installed without its `skills/`
