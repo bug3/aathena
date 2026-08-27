@@ -28,6 +28,8 @@ Init flags:
   --no-sample              Do not scaffold any starter SQL
   --no-generate            Do not auto-run generate after scaffolding
   --no-example             Do not write the example file
+  --skill                  Write the agent skill without asking
+  --no-skill               Do not write the agent skill
 
 Add flags:
   --name <query-name>      Query filename (default: 'default')
@@ -72,6 +74,7 @@ async function main() {
       examplePath: flagString(flags, 'example-path'),
       noGenerate: flagBool(flags, 'generate') === false,
       noExample: flagBool(flags, 'example') === false,
+      skill: flagBool(flags, 'skill'),
     });
     process.exit(code);
   }

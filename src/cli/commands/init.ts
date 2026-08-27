@@ -4,6 +4,7 @@ import * as p from '@clack/prompts';
 import type { AathenaConfig } from '../../runtime/types';
 import { generate } from '../../codegen/generate';
 import { camelCase, pascalCase, isReservedWord } from '../../codegen/utils';
+import { materializeSkill } from '../agent-skill';
 import {
   listDatabases,
   listTables,
@@ -35,6 +36,11 @@ export interface InitFlags {
   tablesDir?: string;
   /** Override the example file path (default: 'src/main.ts'). */
   examplePath?: string;
+  /**
+   * Write the agent skill without asking (`--skill`) or skip it entirely
+   * (`--no-skill`). Left unset, init asks.
+   */
+  skill?: boolean;
 }
 
 interface ScaffoldedQuery {
@@ -316,6 +322,32 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
       writeFileSync(mainPath, buildMainExample(scaffolded, importPath), 'utf-8');
       p.log.success(existed ? `Rewrote ${examplePathRel}` : `Wrote ${examplePathRel}`);
       wroteMain = true;
+    }
+  }
+
+  // The skill is useless where it ships: no agent reads a dependency's
+  // SKILL.md by convention. Offer to put it where one will be read. This
+  // writes outside the project's own source tree, so it needs consent, and
+  // declining at the prompt only skips this step: everything above is
+  // already written.
+  if (flags.skill !== false) {
+    const answer =
+      flags.skill === true
+        ? true
+        : await p.confirm({
+          message: 'Install the aathena agent skill for your coding agent?',
+          initialValue: true,
+        });
+    if (answer === true) {
+      try {
+        for (const target of materializeSkill(cwd)) {
+          if (target.outcome !== 'current') p.log.success(`Wrote ${target.path}`);
+        }
+      } catch (err) {
+        // A missing skills/ directory is a packaging fault, not a reason to
+        // fail a scaffold that otherwise succeeded.
+        p.log.warn(err instanceof Error ? err.message : String(err));
+      }
     }
   }
 
