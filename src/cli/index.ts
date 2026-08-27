@@ -3,6 +3,7 @@ import { findProjectRoot, loadConfig } from '../runtime/config';
 import { parseArgs, flagString, flagBool } from './args';
 import { runInit } from './commands/init';
 import { runAdd } from './commands/add';
+import { materializeSkill } from './agent-skill';
 
 const HELP = `
 aathena - Type-safe AWS Athena client with codegen
@@ -11,6 +12,7 @@ Usage:
   aathena init [flags]                Interactive scaffold for a new project
   aathena add <table> [flags]         Scaffold a new query (use 'db.table' for cross-database)
   aathena generate                    Fetch table schemas and generate typed query functions
+  aathena skill                       Write the aathena agent skill into this project
   aathena help                        Show this help message
 
 Init flags:
@@ -83,6 +85,28 @@ async function main() {
       force: flagBool(flags, 'force'),
     });
     process.exit(code);
+  }
+
+  if (command === 'skill') {
+    const cwd = process.cwd();
+    try {
+      for (const target of materializeSkill(cwd)) {
+        const verb =
+          target.outcome === 'current'
+            ? 'Already current:'
+            : target.outcome === 'updated'
+              ? 'Updated'
+              : 'Wrote';
+        console.log(`  ${verb} ${target.path}`);
+      }
+      console.log('');
+      console.log('For an agent that reads neither directory:');
+      console.log('  gh skill install bug3/aathena');
+      process.exit(0);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
   }
 
   if (command === 'generate') {

@@ -32,7 +32,8 @@
   },
   "files": [
     "dist",
-    "llms.txt"
+    "llms.txt",
+    "skills"
   ],
   "scripts": {
     "build": "tsup",
