@@ -125,11 +125,15 @@ examples/
     aathena.config.json
     tsconfig.json
 scripts/
+  check-agent-rules.mjs
   check-doc-snippets.mjs
   check-docs-placeholders.mjs
   check-export-parity.mjs
   check-type-docs.mjs
   smoke-pack.sh
+skills/
+  aathena/
+    SKILL.md
 src/
   cli/
     commands/
@@ -229,6 +233,7 @@ jobs:
       - run: npm run typecheck:docs
       - run: npm run check:snippets
       - run: npm run check:placeholders
+      - run: npm run check:agent-rules
       - run: npm run docs:build
       # The committed llms.txt is written by docs:build. A difference means
       # the pages under docs/ changed and it was not regenerated.
@@ -2117,18 +2122,90 @@ for (const row of result.rows) {
 }
 ````
 
+## File: scripts/check-agent-rules.mjs
+````javascript
+// Asserts that the rule list in the agent skill is the rule list in
+// context7.json, verbatim and in order.
+//
+// The same handful of sentences has to reach agents through two unrelated
+// channels: Context7 serves context7.json `rules` to anyone who queries the
+// library, and the skill is copied onto a developer's machine by
+// `gh skill install`. Written twice, they drift, and the drift is invisible
+// because no one reads both copies at once.
+//
+// context7.json is the canonical home. It is data, it is already committed,
+// and Context7 serves it whether or not the skill exists. The skill quotes it
+// under a marker, and this check keeps the quote honest.
+//
+// Usage in SKILL.md:
+//
+//     <!-- rules: context7.json -->
+//     - ...first rule, verbatim...
+//     - ...second rule, verbatim...
+
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+const SKILL = 'skills/aathena/SKILL.md';
+const MARKER = '<!-- rules: context7.json -->';
+
+const rules = JSON.parse(readFileSync(join(REPO, 'context7.json'), 'utf8')).rules ?? [];
+const lines = readFileSync(join(REPO, SKILL), 'utf8').split('\n');
+const failures = [];
+
+const start = lines.indexOf(MARKER);
+if (start === -1) {
+  failures.push(`${SKILL}: no ${MARKER} marker`);
+} else if (rules.length === 0) {
+  failures.push('context7.json declares no rules, so the skill quotes nothing');
+} else {
+  // The block runs from the marker to the first line that is not a bullet, so
+  // an added or removed bullet is caught by the length comparison below rather
+  // than silently shifting the pairing.
+  let end = start + 1;
+  while (end < lines.length && lines[end].startsWith('- ')) end++;
+  const quoted = lines.slice(start + 1, end).map((line) => line.slice(2));
+
+  if (quoted.length !== rules.length) {
+    failures.push(
+      `${SKILL}: quotes ${quoted.length} rule(s), context7.json declares ${rules.length}`,
+    );
+  }
+
+  for (let i = 0; i < Math.min(quoted.length, rules.length); i++) {
+    if (quoted[i] !== rules[i]) {
+      failures.push(
+        `${SKILL}:${start + 2 + i}: rule ${i + 1} does not match context7.json\n` +
+          `      skill: ${quoted[i]}\n` +
+          `      json:  ${rules[i]}`,
+      );
+    }
+  }
+}
+
+for (const failure of failures) console.error(`  ${failure}`);
+console.log(`checked ${rules.length} rule(s) in ${SKILL} against context7.json`);
+process.exit(failures.length > 0 ? 1 : 0);
+````
+
 ## File: scripts/check-doc-snippets.mjs
 ````javascript
-// Asserts that every code block in README.md marked with a snippet comment is
-// byte-for-byte the corresponding file under docs/snippets/.
+// Asserts that every code block marked with a snippet comment is byte-for-byte
+// the corresponding file under docs/snippets/.
 //
 // Those files are typechecked by `typecheck:docs` against the real source and
-// the example project's generated output, so binding the README to them is
+// the example project's generated output, so binding a document to them is
 // what stops a documented example from drifting away from what the generator
 // emits. A README block claiming `row.eventId` when the generator writes
 // `row.event_id` is the defect this check exists to make impossible.
 //
-// Usage in README.md:
+// The agent skill is bound the same way and for the same reason: it is
+// published to consumers who never see this repository, so a stale example in
+// it is worse than one in the README.
+//
+// Usage:
 //
 //     <!-- snippet: run-a-query.ts -->
 //     ```typescript
@@ -2140,55 +2217,62 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
-const README = join(REPO, 'README.md');
 const SNIPPET_DIR = join(REPO, 'docs', 'snippets');
 const MARKER = /^<!-- snippet: ([\w.-]+) -->$/;
 
-const lines = readFileSync(README, 'utf8').split('\n');
+// Every document that is allowed to quote a snippet. Each must carry at least
+// one marker: a document listed here with none has either lost its bindings or
+// no longer belongs on the list, and both are worth a failure.
+const TARGETS = ['README.md', 'skills/aathena/SKILL.md'];
+
 const failures = [];
-let checked = 0;
+let total = 0;
 
-for (let i = 0; i < lines.length; i++) {
-  const match = lines[i].match(MARKER);
-  if (!match) continue;
+for (const target of TARGETS) {
+  const lines = readFileSync(join(REPO, target), 'utf8').split('\n');
+  let checked = 0;
 
-  const name = match[1];
-  const where = `README.md:${i + 1}`;
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(MARKER);
+    if (!match) continue;
 
-  if (!lines[i + 1]?.startsWith('```')) {
-    failures.push(`${where}: marker for ${name} is not followed by a code fence`);
-    continue;
+    const name = match[1];
+    const where = `${target}:${i + 1}`;
+
+    if (!lines[i + 1]?.startsWith('```')) {
+      failures.push(`${where}: marker for ${name} is not followed by a code fence`);
+      continue;
+    }
+
+    let end = i + 2;
+    while (end < lines.length && !lines[end].startsWith('```')) end++;
+    if (end >= lines.length) {
+      failures.push(`${where}: unterminated code fence after the ${name} marker`);
+      continue;
+    }
+
+    const file = join(SNIPPET_DIR, name);
+    if (!existsSync(file)) {
+      failures.push(`${where}: no such snippet, docs/snippets/${name}`);
+      continue;
+    }
+
+    checked++;
+    const block = lines.slice(i + 2, end).join('\n');
+    const source = readFileSync(file, 'utf8').replace(/\n+$/, '');
+    if (block !== source) {
+      failures.push(`${where}: block does not match docs/snippets/${name}`);
+    }
   }
 
-  let end = i + 2;
-  while (end < lines.length && !lines[end].startsWith('```')) end++;
-  if (end >= lines.length) {
-    failures.push(`${where}: unterminated code fence after the ${name} marker`);
-    continue;
-  }
-
-  const file = join(SNIPPET_DIR, name);
-  if (!existsSync(file)) {
-    failures.push(`${where}: no such snippet, docs/snippets/${name}`);
-    continue;
-  }
-
-  checked++;
-  const block = lines.slice(i + 2, end).join('\n');
-  const source = readFileSync(file, 'utf8').replace(/\n+$/, '');
-  if (block !== source) {
-    failures.push(`${where}: block does not match docs/snippets/${name}`);
-  }
-}
-
-// Guards the markers themselves: without this, deleting every marker would
-// leave the check passing on an unbound README.
-if (checked === 0) {
-  failures.push('README.md contains no snippet markers');
+  // Guards the markers themselves: without this, deleting every marker would
+  // leave the check passing on an unbound document.
+  if (checked === 0) failures.push(`${target} contains no snippet markers`);
+  total += checked;
 }
 
 for (const failure of failures) console.error(`  ${failure}`);
-console.log(`checked ${checked} README snippet(s) against docs/snippets/`);
+console.log(`checked ${total} snippet(s) across ${TARGETS.length} document(s) against docs/snippets/`);
 process.exit(failures.length > 0 ? 1 : 0);
 ````
 
@@ -2526,6 +2610,108 @@ echo "load cjs"
 node probe.cjs
 
 echo "smoke ok"
+````
+
+## File: skills/aathena/SKILL.md
+````markdown
+---
+name: aathena
+description: "Build type-safe AWS Athena (Amazon Athena) integrations in TypeScript with the aathena npm package: generate typed query functions and row types from an AWS Glue catalog, validate SQL parameters before submission, parse Athena arrays, maps and structs, and bound query concurrency. Use when a project depends on aathena, when generating TypeScript types from AWS Glue schemas, or when writing or debugging Athena queries in TypeScript."
+license: MIT
+metadata:
+  author: bug3
+---
+
+# Use aathena
+
+`aathena` reads an AWS Glue catalog and generates one typed TypeScript function
+per SQL file. Column names and types come from the catalog verbatim, parameters
+are validated before the query is submitted, and Athena's string-encoded arrays,
+maps and structs are parsed back into real objects.
+
+## Decide fit
+
+Use aathena when the project queries Athena from TypeScript and benefits from
+types derived from the real catalog, when rows carry complex Athena types that
+would otherwise need hand-written parsing, or when several queries must run
+concurrently under a quota.
+
+Prefer `@aws-sdk/client-athena` directly for a one-off untyped query, for
+Athena features aathena does not wrap (workgroup administration, named queries,
+notebooks), or when there is no Glue catalog to generate from.
+
+## Establish the local truth first
+
+Read before proposing. The installed package is the authority, not memory:
+
+1. `package.json` for the installed aathena version.
+2. `aathena.config.json` for `database`, `tablesDir` and `outDir`.
+3. The generated barrel (`<outDir>/index.ts`) for the query functions that
+   already exist.
+4. `node_modules/aathena/dist/index.d.ts` for the exported API and its JSDoc.
+
+Never invent a convenience method. If a declaration does not exist in the
+installed types, it does not exist.
+
+## Rules
+
+These are the maintainer rules, kept identical to `context7.json` in the aathena
+repository and checked in CI.
+
+<!-- rules: context7.json -->
+- Column names come from the AWS Glue catalog verbatim. Access them exactly as the table declares them, for example row.event_id, never row.eventId.
+- Only partition keys are NOT NULL. Every regular column is typed T | null, so guard struct and array access: row.address?.city, not row.address.city.
+- Import the generated query functions from the generated barrel and call them. Do not hand-write createQuery calls; run `aathena add` and `aathena generate` instead.
+- parallel() takes thunks, not promises: parallel([() => byStatus(client, params)], { concurrency: 'auto', client }).
+- SQL placeholders are {{name}}. Declare parameter types with -- @param annotations in the SQL file, which validate before the query is submitted.
+- Never hardcode AWS credentials. createClient() reads aathena.config.json and resolves credentials through the standard AWS SDK chain.
+
+## The workflow
+
+Generation is a CLI step, not something to hand-write:
+
+- `npx aathena init` scaffolds a project against a live Glue catalog.
+- `npx aathena add` adds a table and a starter SQL file.
+- `npx aathena generate` regenerates types and query functions from the SQL.
+
+Generated files are committed. When they look stale, regenerate and commit the
+result rather than editing them by hand.
+
+Calling a generated query:
+
+<!-- snippet: run-a-query.ts -->
+```typescript
+import { createClient } from 'aathena';
+import { byStatus } from './generated';
+
+const athena = createClient();
+const result = await byStatus(athena, { status: 'active', rowLimit: 99 });
+```
+
+## Validate
+
+Run the project's own TypeScript check after any change to SQL, configuration or
+generated output. Type errors in generated code almost always mean the SQL and
+the catalog have drifted apart, so regenerate before debugging the types.
+
+## Safety
+
+Athena bills by bytes scanned, so a query missing a partition predicate can scan
+an entire table. Say so before running one. Never hardcode AWS credentials:
+`createClient()` reads `aathena.config.json` and resolves credentials through
+the standard AWS SDK chain. Ask before executing any live query.
+
+## Reference
+
+Full documentation: <https://bug3.github.io/aathena/>
+
+- Getting started: <https://bug3.github.io/aathena/guide/getting-started>
+- Writing queries: <https://bug3.github.io/aathena/guide/writing-queries>
+- Running queries: <https://bug3.github.io/aathena/guide/running-queries>
+- Partitions and views: <https://bug3.github.io/aathena/guide/partitions>
+- API surface: <https://bug3.github.io/aathena/reference/api>
+- Type mapping: <https://bug3.github.io/aathena/reference/type-mapping>
+- Configuration: <https://bug3.github.io/aathena/reference/configuration>
 ````
 
 ## File: src/cli/commands/add.ts
@@ -8462,12 +8648,13 @@ publish:
     "check:export-parity": "node scripts/check-export-parity.mjs",
     "check:type-docs": "node scripts/check-type-docs.mjs",
     "check:snippets": "node scripts/check-doc-snippets.mjs",
+    "check:agent-rules": "node scripts/check-agent-rules.mjs",
     "check:placeholders": "node scripts/check-docs-placeholders.mjs",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "smoke:pack": "bash scripts/smoke-pack.sh",
-    "prepublishOnly": "npm run lint && npm test && npm run typecheck:examples && npm run check:snippets && npm run build && npm run check:type-docs && npm run check:export-parity && npm run smoke:pack"
+    "prepublishOnly": "npm run lint && npm test && npm run typecheck:examples && npm run check:snippets && npm run check:agent-rules && npm run build && npm run check:type-docs && npm run check:export-parity && npm run smoke:pack"
   },
   "keywords": [
     "athena",
