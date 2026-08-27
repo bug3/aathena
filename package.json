@@ -42,6 +42,7 @@
     "typecheck:examples": "for d in examples/*/; do [ -f \"$d/tsconfig.json\" ] || { echo \"missing tsconfig: $d\" >&2; exit 1; }; echo \"typecheck $d\"; tsc -p \"$d/tsconfig.json\" --noEmit || exit 1; done",
     "typecheck:docs": "tsc -p docs/tsconfig.json --noEmit",
     "examples:regen": "UPDATE_EXAMPLES=1 vitest run tests/examples-generated.test.ts",
+    "check:export-parity": "node scripts/check-export-parity.mjs",
     "check:type-docs": "node scripts/check-type-docs.mjs",
     "check:snippets": "node scripts/check-doc-snippets.mjs",
     "check:placeholders": "node scripts/check-docs-placeholders.mjs",
@@ -49,7 +50,7 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "smoke:pack": "bash scripts/smoke-pack.sh",
-    "prepublishOnly": "npm run lint && npm test && npm run typecheck:examples && npm run check:snippets && npm run build && npm run check:type-docs && npm run smoke:pack"
+    "prepublishOnly": "npm run lint && npm test && npm run typecheck:examples && npm run check:snippets && npm run build && npm run check:type-docs && npm run check:export-parity && npm run smoke:pack"
   },
   "keywords": [
     "athena",
