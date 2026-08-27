@@ -3,7 +3,7 @@
 // Source: sampledb.users
 
 export interface Users {
-  user_id: number;
+  user_id: number | null;
   username: string | null;
   email: string | null;
   age: number | null;

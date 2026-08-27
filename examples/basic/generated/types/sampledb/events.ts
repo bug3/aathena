@@ -3,7 +3,7 @@
 // Source: sampledb.events
 
 export interface Events {
-  event_id: number;
+  event_id: number | null;
   event_name: string | null;
   status: string | null;
   price: string | null; // decimal → string (precision safe)

@@ -5,6 +5,6 @@
 export interface Pageviews {
   page_url: string | null;
   session_id: string | null;
-  view_count: number;
+  view_count: number | null;
   created_at: Date | null;
 }
