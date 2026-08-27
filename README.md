@@ -271,6 +271,7 @@ result.statistics.runtime?.outputRows;          // 99
 | `aathena init` | Interactive project scaffold. Fills config from AWS, picks tables, probes partitions, runs generate, writes `src/main.ts`. |
 | `aathena add <table>` | Scaffold a new query under `tables/{database}/{table}/<name>.sql`. Accepts `db.table` for cross-database tables and prompts to resolve mismatches. |
 | `aathena generate` | Re-run codegen (fetch Glue schemas, produce typed query functions). Runs automatically after `init` and `add` unless `--no-generate`. |
+| `aathena skill` | Write the aathena agent skill into `.agents/skills/` (and `.claude/skills/` when present) so a coding agent reads it. |
 | `aathena help` | Show all flags. |
 
 ### `aathena init`
@@ -294,7 +295,31 @@ Flags:
 - `--no-sample` - skip SQL scaffolding
 - `--no-generate` - skip the auto-generate step
 - `--no-example` - skip writing the example file
+- `--skill` / `--no-skill` - accept or skip the agent-skill prompt without being asked
 - `--force` - overwrite `aathena.config.json` and regenerate the example file to reflect the current selection. SQL files are always preserved because you may have edited them.
+
+### `aathena skill`
+
+Copies the agent skill shipped inside the package into the directories a coding
+agent scans, so it is read on the next session:
+
+| Path | When |
+| --- | --- |
+| `.agents/skills/aathena/SKILL.md` | always; the vendor-neutral convention that Codex, Cursor, Copilot, Gemini CLI and OpenCode all read |
+| `.claude/skills/aathena/SKILL.md` | when the project already has a `.claude` directory |
+
+Idempotent: a file already holding the current skill is left alone. A file
+holding an older one is replaced, not merged, because the package owns it.
+
+`init` offers the same thing at the end of its run. Accept it there with
+`--skill` or skip it with `--no-skill`.
+
+For an agent that reads its own vendor directory, such as Grok or Devin, use
+GitHub's installer instead, which knows every agent's layout:
+
+```bash
+gh skill install bug3/aathena
+```
 
 ### `aathena add`
 
