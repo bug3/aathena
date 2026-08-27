@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 
 import {
   materializeSkill,
+  shouldOfferSkill,
   skillSourcePath,
   skillTargets,
   writeSkill,
@@ -94,5 +95,23 @@ describe('materializeSkill', () => {
     writeFileSync(join(project, NEUTRAL), 'an older version\n', 'utf-8');
 
     expect(materializeSkill(project)).toEqual([{ path: NEUTRAL, outcome: 'updated' }]);
+  });
+});
+
+describe('shouldOfferSkill', () => {
+  it('asks when interactive and nothing was specified', () => {
+    expect(shouldOfferSkill(undefined, true)).toBe(true);
+  });
+
+  it('stays silent without a TTY, so a scripted init cannot hang on the prompt', () => {
+    expect(shouldOfferSkill(undefined, false)).toBe(false);
+  });
+
+  it('honours --skill without a TTY, which is how a script opts in', () => {
+    expect(shouldOfferSkill(true, false)).toBe(true);
+  });
+
+  it('honours --no-skill even when interactive', () => {
+    expect(shouldOfferSkill(false, true)).toBe(false);
   });
 });

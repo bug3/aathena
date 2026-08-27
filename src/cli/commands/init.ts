@@ -4,7 +4,7 @@ import * as p from '@clack/prompts';
 import type { AathenaConfig } from '../../runtime/types';
 import { generate } from '../../codegen/generate';
 import { camelCase, pascalCase, isReservedWord } from '../../codegen/utils';
-import { materializeSkill } from '../agent-skill';
+import { materializeSkill, shouldOfferSkill } from '../agent-skill';
 import {
   listDatabases,
   listTables,
@@ -330,7 +330,7 @@ export async function runInit(cwd: string, flags: InitFlags): Promise<number> {
   // writes outside the project's own source tree, so it needs consent, and
   // declining at the prompt only skips this step: everything above is
   // already written.
-  if (flags.skill !== false) {
+  if (shouldOfferSkill(flags.skill, process.stdin.isTTY === true)) {
     const answer =
       flags.skill === true
         ? true
