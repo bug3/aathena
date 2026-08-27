@@ -27,6 +27,7 @@ Interactive by default. The full sequence is in
 | `--no-sample` | skip SQL scaffolding |
 | `--no-generate` | skip the auto-generate step |
 | `--no-example` | skip writing the example file |
+| `--skill` / `--no-skill` | accept or decline the agent-skill step without being asked. Unset and without a TTY, the step is skipped |
 | `--force` | overwrite `aathena.config.json` and regenerate the example file. SQL files are always preserved, because you may have edited them |
 
 ## `aathena add`

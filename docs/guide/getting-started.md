@@ -37,8 +37,11 @@ npx aathena init
    and `WHERE` lines.
 7. Runs `generate` to produce the typed query functions.
 8. Writes a runnable `src/main.ts` that calls every scaffolded query.
+9. Offers to write the aathena agent skill into your agent's skills
+   directory, so a coding agent picks it up on its next session.
 
-Every prompt has a flag, so `init` also runs unattended:
+Every prompt has a flag, so `init` also runs unattended. Without a terminal
+to answer it, the skill step is skipped unless `--skill` asks for it:
 
 ```bash
 npx aathena init --region eu-west-1 --database sampledb --tables events,users
