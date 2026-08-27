@@ -22,6 +22,6 @@ const result = await topPages(athena, {
 
 for (const row of result.rows) {
   console.log(row.page_url);    // string | null
-  console.log(row.view_count);  // number
+  console.log(row.view_count);  // number | null
   console.log(row.created_at);  // Date | null
 }

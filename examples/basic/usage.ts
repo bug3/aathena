@@ -24,7 +24,7 @@ const events = await byStatus(athena, {
 });
 
 for (const row of events.rows) {
-  console.log(row.event_id);    // number
+  console.log(row.event_id);    // number | null
   console.log(row.event_name);  // string | null
   console.log(row.price);       // string | null (decimal → precision safe)
   console.log(row.created_at);  // Date | null
@@ -72,7 +72,7 @@ const products = await byCategory(athena, {
 });
 
 for (const row of products.rows) {
-  console.log(row.product_id);   // number
+  console.log(row.product_id);   // number | null
   console.log(row.name);         // string | null
 
   // array<varchar> → string[]

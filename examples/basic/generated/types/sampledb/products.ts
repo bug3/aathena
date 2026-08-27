@@ -3,7 +3,7 @@
 // Source: sampledb.products
 
 export interface Products {
-  product_id: number;
+  product_id: number | null;
   name: string | null;
   category: string | null;
   tags: string[] | null; // array<varchar>

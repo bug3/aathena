@@ -5,7 +5,7 @@
       "database": "sampledb",
       "tableName": "events",
       "columns": [
-        { "name": "event_id", "type": "int", "nullable": false },
+        { "name": "event_id", "type": "int", "nullable": true },
         { "name": "event_name", "type": "varchar", "nullable": true },
         { "name": "status", "type": "varchar", "nullable": true },
         { "name": "price", "type": "decimal", "nullable": true },
@@ -29,7 +29,7 @@
       "database": "sampledb",
       "tableName": "products",
       "columns": [
-        { "name": "product_id", "type": "int", "nullable": false },
+        { "name": "product_id", "type": "int", "nullable": true },
         { "name": "name", "type": "varchar", "nullable": true },
         { "name": "category", "type": "varchar", "nullable": true },
         { "name": "tags", "type": "array<varchar>", "nullable": true },
@@ -41,7 +41,7 @@
       "database": "sampledb",
       "tableName": "users",
       "columns": [
-        { "name": "user_id", "type": "int", "nullable": false },
+        { "name": "user_id", "type": "int", "nullable": true },
         { "name": "username", "type": "varchar", "nullable": true },
         { "name": "email", "type": "varchar", "nullable": true },
         { "name": "age", "type": "int", "nullable": true },
@@ -56,7 +56,7 @@
       "columns": [
         { "name": "page_url", "type": "varchar", "nullable": true },
         { "name": "session_id", "type": "varchar", "nullable": true },
-        { "name": "view_count", "type": "int", "nullable": false },
+        { "name": "view_count", "type": "int", "nullable": true },
         { "name": "created_at", "type": "timestamp", "nullable": true }
       ]
     }
