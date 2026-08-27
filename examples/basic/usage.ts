@@ -77,17 +77,17 @@ for (const row of products.rows) {
 
   // array<varchar> → string[]
   console.log(row.tags);                // string[] | null
-  console.log(row.tags?.[0]);           // string
+  console.log(row.tags?.[0]);           // string | undefined
 
   // map<string,string> → Record<string, string>
   console.log(row.attributes);          // Record<string, string> | null
-  console.log(row.attributes?.['color']); // string
+  console.log(row.attributes?.['color']); // string | undefined
 
   // struct<city:string,zip:integer,country:string> → typed object
   console.log(row.shipping_address);           // { city: string; zip: number; country: string } | null
-  console.log(row.shipping_address?.city);     // string
-  console.log(row.shipping_address?.zip);      // number
-  console.log(row.shipping_address?.country);  // string
+  console.log(row.shipping_address?.city);     // string | undefined
+  console.log(row.shipping_address?.zip);      // number | undefined
+  console.log(row.shipping_address?.country);  // string | undefined
 }
 
 // --- Query statistics ---
