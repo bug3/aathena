@@ -105,6 +105,23 @@ describe.each(PROJECTS)('%s generated output', (project) => {
     expect(onDisk).toEqual(expected);
   });
 
+  // fetchTableSchema builds `[...regularColumns, ...partitionKeys]` and marks
+  // only partition keys NOT NULL, so a real catalog always yields a nullable
+  // prefix followed by a NOT NULL suffix. A fixture that marks a regular column
+  // NOT NULL publishes a row type Glue cannot produce - and context7.json rule 2
+  // tells agents that a NOT NULL column is a partition key they may rely on.
+  it.each([...schemas.values()].map((s) => [`${s.database}.${s.tableName}`, s] as const))(
+    'records %s with NOT NULL columns only in trailing position',
+    (_name, schema) => {
+      const lastNullable = schema.columns.reduce((last, c, i) => (c.nullable ? i : last), -1);
+      const misplaced = schema.columns
+        .slice(0, Math.max(lastNullable, 0))
+        .filter((c) => !c.nullable)
+        .map((c) => c.name);
+      expect(misplaced, 'NOT NULL is the partition-key shape; it cannot precede a nullable column').toEqual([]);
+    },
+  );
+
   it.each([...schemas.values()].map((s) => [`${s.database}.${s.tableName}`, s] as const))(
     'regenerates the type file for %s',
     (_name, schema) => {
