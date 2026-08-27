@@ -6,12 +6,13 @@
   "description": "Type-safe AWS Athena client.",
   "folders": [],
   "excludeFolders": [
+    ".github",
     "dist",
     "node_modules",
     "scripts",
-    "src",
-    "tests",
-    ".github"
+    "src/cli",
+    "src/codegen",
+    "tests"
   ],
   "excludeFiles": [
     "llms-full.txt",
