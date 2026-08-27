@@ -95,4 +95,17 @@ node probe.mjs
 echo "load cjs"
 node probe.cjs
 
+# The `aathena skill` command copies a file out of the installed package, so it
+# breaks in exactly two ways nothing else here would catch: `files` dropping
+# `skills`, and the path from dist/cli/ to the package root changing. Both look
+# fine in the working tree, where the same relative path happens to resolve.
+echo "skill materializes from the installed package"
+mkdir -p project && cd project
+node ../node_modules/aathena/dist/cli/index.js skill
+test -f .agents/skills/aathena/SKILL.md \
+  || { echo "aathena skill wrote no .agents/skills/aathena/SKILL.md" >&2; exit 1; }
+diff ../node_modules/aathena/skills/aathena/SKILL.md .agents/skills/aathena/SKILL.md \
+  || { echo "materialized skill differs from the packaged one" >&2; exit 1; }
+cd ..
+
 echo "smoke ok"
