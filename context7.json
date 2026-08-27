@@ -10,8 +10,6 @@
     "dist",
     "node_modules",
     "scripts",
-    "src/cli",
-    "src/codegen",
     "tests"
   ],
   "excludeFiles": [
