@@ -8763,8 +8763,6 @@ docs/.vitepress/cache/
     "dist",
     "node_modules",
     "scripts",
-    "src/cli",
-    "src/codegen",
     "tests"
   ],
   "excludeFiles": [
@@ -8905,6 +8903,11 @@ clean:
 #                       publish. Push only the one just created.
 #   release-guard       the tag is what triggers a publish, so cutting one from
 #                       a feature branch ships that branch.
+#   immutable tags      a `refs/tags/v*` repository ruleset refuses deletion and
+#                       force-push, with no bypass. A published version's
+#                       provenance attestation names one commit, so a tag that
+#                       has shipped must keep pointing at it. Repair a bad
+#                       release by cutting the next one, never by moving a tag.
 
 release-guard:
 	@branch=$$(git rev-parse --abbrev-ref HEAD); \
