@@ -40,7 +40,7 @@ installed types, it does not exist.
 ## Rules
 
 These are the maintainer rules, kept identical to `context7.json` in the aathena
-repository.
+repository and checked in CI.
 
 <!-- rules: context7.json -->
 - Column names come from the AWS Glue catalog verbatim. Access them exactly as the table declares them, for example row.event_id, never row.eventId.

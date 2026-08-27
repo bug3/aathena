@@ -32,6 +32,7 @@ jobs:
       - run: npm run typecheck:docs
       - run: npm run check:snippets
       - run: npm run check:placeholders
+      - run: npm run check:agent-rules
       - run: npm run docs:build
       # The committed llms.txt is written by docs:build. A difference means
       # the pages under docs/ changed and it was not regenerated.
