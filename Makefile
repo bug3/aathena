@@ -1,4 +1,4 @@
-.PHONY: install build test test-watch lint clean release-patch release-minor release-major publish
+.PHONY: install build test test-watch lint clean release-guard release-patch release-minor release-major publish
 
 install:
 	npm install
@@ -27,23 +27,33 @@ clean:
 #                       branch push is rejected, which publishes a version from
 #                       a commit that is not on main. Split, make halts on the
 #                       failed branch push and the tag never leaves.
-release-patch:
+#   one tag by name     `git push --tags` sends every local tag. The release
+#                       workflow triggers on `v*`, so a stray local tag would
+#                       publish. Push only the one just created.
+#   release-guard       the tag is what triggers a publish, so cutting one from
+#                       a feature branch ships that branch.
+
+release-guard:
+	@branch=$$(git rev-parse --abbrev-ref HEAD); \
+	test "$$branch" = main || { echo "releases are cut from main, not $$branch" >&2; exit 1; }
+
+release-patch: release-guard
 	git pull --rebase
 	npm version patch -m "chore: bump version to %s"
 	git push
-	git push --tags
+	git push origin "v$$(node -p 'require("./package.json").version')"
 
-release-minor:
+release-minor: release-guard
 	git pull --rebase
 	npm version minor -m "chore: bump version to %s"
 	git push
-	git push --tags
+	git push origin "v$$(node -p 'require("./package.json").version')"
 
-release-major:
+release-major: release-guard
 	git pull --rebase
 	npm version major -m "chore: bump version to %s"
 	git push
-	git push --tags
+	git push origin "v$$(node -p 'require("./package.json").version')"
 
 publish:
 	@echo "Publishing happens in CI, on a pushed v* tag." >&2
