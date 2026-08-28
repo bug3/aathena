@@ -28,7 +28,7 @@ The content is organized as follows:
 ## Notes
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Files matching these patterns are excluded: llms-full.txt
+- Files matching these patterns are excluded: llms-full.txt, context7.json
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -184,7 +184,6 @@ tests/
   type-map.test.ts
   view-parsing.test.ts
 .gitignore
-context7.json
 eslint.config.mjs
 LICENSE
 llms.txt
@@ -366,7 +365,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - run: npx -y repomix --style markdown --output llms-full.txt --ignore llms-full.txt
+      - run: npx -y repomix --style markdown --output llms-full.txt --ignore llms-full.txt,context7.json
       - name: Commit llms-full.txt
         run: |
           git config user.name "github-actions[bot]"
@@ -8747,42 +8746,6 @@ playground/
 
 # VitePress (build output already matches the bare `dist/` rule above)
 docs/.vitepress/cache/
-````
-
-## File: context7.json
-````json
-{
-  "$schema": "https://context7.com/schema/context7.json",
-  "url": "https://context7.com/bug3/aathena",
-  "public_key": "pk_I15Rd9g9hO1pZBfoCC43O",
-  "projectTitle": "aathena",
-  "description": "Type-safe AWS Athena client.",
-  "folders": [],
-  "excludeFolders": [
-    ".github",
-    "dist",
-    "node_modules",
-    "scripts",
-    "tests"
-  ],
-  "excludeFiles": [
-    "llms-full.txt",
-    "package-lock.json",
-    "eslint.config.mjs",
-    "tsup.config.ts",
-    "vitest.config.ts",
-    "Makefile"
-  ],
-  "rules": [
-    "Column names come from the AWS Glue catalog verbatim. Access them exactly as the table declares them, for example row.event_id, never row.eventId.",
-    "Only partition keys are NOT NULL. Every regular column is typed T | null, so guard struct and array access: row.address?.city, not row.address.city.",
-    "Import the generated query functions from the generated barrel and call them. Do not hand-write createQuery calls; run `aathena add` and `aathena generate` instead.",
-    "parallel() takes thunks, not promises: parallel([() => byStatus(client, params)], { concurrency: 'auto', client }).",
-    "SQL placeholders are {{name}}. Declare parameter types with -- @param annotations in the SQL file, which validate before the query is submitted.",
-    "Never hardcode AWS credentials. createClient() reads aathena.config.json and resolves credentials through the standard AWS SDK chain."
-  ],
-  "previousVersions": []
-}
 ````
 
 ## File: eslint.config.mjs
