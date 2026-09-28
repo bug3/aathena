@@ -120,7 +120,11 @@ export async function executeQuery(
       }
       return {
         queryExecutionId,
-        ...(await collectResults(client, queryExecutionId)),
+        ...(await collectResults(
+          client,
+          queryExecutionId,
+          status.QueryExecution?.StatementType !== 'UTILITY',
+        )),
         statistics,
       };
     }
@@ -177,9 +181,12 @@ async function fetchRuntimeRows(
   return out;
 }
 
+// A DML result repeats the column names as its first row. A UTILITY result
+// (DESCRIBE, SHOW TABLES, SHOW COLUMNS) has no such row: its first row is data.
 async function collectResults(
   client: AthenaClient,
   queryExecutionId: string,
+  hasHeaderRow: boolean,
 ): Promise<{ columns: ColumnMeta[]; rows: (string | undefined)[][] }> {
   const columns: ColumnMeta[] = [];
   const rows: (string | undefined)[][] = [];
@@ -207,9 +214,9 @@ async function collectResults(
       }
     }
 
-    // Extract rows (skip header row on first page)
+    // Extract rows (skip the header row on the first page, when there is one)
     if (resultSet?.Rows) {
-      const startIdx = isFirstPage ? 1 : 0; // first row is header
+      const startIdx = isFirstPage && hasHeaderRow ? 1 : 0;
       for (let i = startIdx; i < resultSet.Rows.length; i++) {
         const row = resultSet.Rows[i];
         rows.push(
