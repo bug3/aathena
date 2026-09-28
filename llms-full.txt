@@ -180,6 +180,7 @@ tests/
   limits.test.ts
   parallel.test.ts
   parser.test.ts
+  result-header-row.test.ts
   sql-parser.test.ts
   type-map.test.ts
   view-parsing.test.ts
@@ -5620,7 +5621,11 @@ export async function executeQuery(
       }
       return {
         queryExecutionId,
-        ...(await collectResults(client, queryExecutionId)),
+        ...(await collectResults(
+          client,
+          queryExecutionId,
+          status.QueryExecution?.StatementType !== 'UTILITY',
+        )),
         statistics,
       };
     }
@@ -5677,9 +5682,12 @@ async function fetchRuntimeRows(
   return out;
 }
 
+// A DML result repeats the column names as its first row. A UTILITY result
+// (DESCRIBE, SHOW TABLES, SHOW COLUMNS) has no such row: its first row is data.
 async function collectResults(
   client: AthenaClient,
   queryExecutionId: string,
+  hasHeaderRow: boolean,
 ): Promise<{ columns: ColumnMeta[]; rows: (string | undefined)[][] }> {
   const columns: ColumnMeta[] = [];
   const rows: (string | undefined)[][] = [];
@@ -5707,9 +5715,9 @@ async function collectResults(
       }
     }
 
-    // Extract rows (skip header row on first page)
+    // Extract rows (skip the header row on the first page, when there is one)
     if (resultSet?.Rows) {
-      const startIdx = isFirstPage ? 1 : 0; // first row is header
+      const startIdx = isFirstPage && hasHeaderRow ? 1 : 0;
       for (let i = startIdx; i < resultSet.Rows.length; i++) {
         const row = resultSet.Rows[i];
         rows.push(
@@ -8358,6 +8366,67 @@ describe('parseRow', () => {
 });
 ````
 
+## File: tests/result-header-row.test.ts
+````typescript
+import type { AthenaClient } from '@aws-sdk/client-athena';
+import { describe, expect, it } from 'vitest';
+import { executeQuery } from '../src/runtime/lifecycle';
+
+// Athena puts the column names in the first result row of a DML query, but
+// UTILITY statements (DESCRIBE, SHOW TABLES, SHOW COLUMNS) return data from
+// the first row on. Verified live on 2026-09-28.
+function fakeClient(statementType: string | undefined, values: string[]): AthenaClient {
+  const send = async (command: object) => {
+    switch (command.constructor.name) {
+      case 'StartQueryExecutionCommand':
+        return { QueryExecutionId: 'q-1' };
+      case 'GetQueryExecutionCommand':
+        return {
+          QueryExecution: {
+            Status: { State: 'SUCCEEDED' },
+            StatementType: statementType,
+            Statistics: {},
+          },
+        };
+      case 'GetQueryResultsCommand':
+        return {
+          ResultSet: {
+            ResultSetMetadata: { ColumnInfo: [{ Name: 'tab_name', Type: 'varchar' }] },
+            Rows: values.map((v) => ({ Data: [{ VarCharValue: v }] })),
+          },
+        };
+      default:
+        throw new Error(`unexpected command ${command.constructor.name}`);
+    }
+  };
+  return { send } as unknown as AthenaClient;
+}
+
+async function rowsFor(statementType: string | undefined, values: string[]) {
+  const out = await executeQuery(fakeClient(statementType, values), 'SQL', 'db', undefined, undefined, {
+    pollingInterval: 1,
+  });
+  return out.rows;
+}
+
+describe('result header row', () => {
+  it('keeps the first row of a UTILITY result, which carries data', async () => {
+    expect(await rowsFor('UTILITY', ['alb_external', 'black_box'])).toEqual([
+      ['alb_external'],
+      ['black_box'],
+    ]);
+  });
+
+  it('drops the header row of a DML result', async () => {
+    expect(await rowsFor('DML', ['tab_name', 'black_box'])).toEqual([['black_box']]);
+  });
+
+  it('keeps the header skip when Athena reports no statement type', async () => {
+    expect(await rowsFor(undefined, ['tab_name', 'black_box'])).toEqual([['black_box']]);
+  });
+});
+````
+
 ## File: tests/sql-parser.test.ts
 ````typescript
 import { describe, it, expect } from 'vitest';
@@ -8905,7 +8974,7 @@ publish:
 ````json
 {
   "name": "aathena",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Type-safe AWS Athena client",
   "author": "bug3",
   "license": "MIT",
