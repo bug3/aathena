@@ -23,11 +23,14 @@ const parseBoolean: Parser = (v, col) => {
   throw new ColumnParseError(col, v, 'boolean');
 };
 
+const ZONE_DESIGNATOR = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
 const parseTimestamp: Parser = (v, col) => {
-  // Athena returns timestamps as 'YYYY-MM-DD HH:MM:SS.sss' (timezone-naive).
-  // Replace space with 'T' for ISO 8601 parsing without appending 'Z',
-  // so the timestamp is interpreted in the local timezone (matching Athena's behavior).
-  const d = new Date(v.includes('T') ? v : v.replace(' ', 'T'));
+  // Athena returns zone-less 'YYYY-MM-DD HH:MM:SS.sss'. Without a designator
+  // JavaScript reads it in the host's zone, so the same row would give a
+  // different instant on every machine. Read it as UTC.
+  const iso = v.includes('T') ? v : v.replace(' ', 'T');
+  const d = new Date(ZONE_DESIGNATOR.test(iso) ? iso : `${iso}Z`);
   if (isNaN(d.getTime())) throw new ColumnParseError(col, v, 'timestamp');
   return d;
 };

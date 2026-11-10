@@ -59,6 +59,44 @@ describe('parseRow', () => {
     expect(row.ts.getFullYear()).toBe(2022);
   });
 
+  describe.each(['UTC', 'Europe/Istanbul', 'America/Los_Angeles'])(
+    'timestamp under TZ=%s',
+    (zone) => {
+      const columns: ColumnMeta[] = [{ name: 'ts', type: 'timestamp', nullable: false }];
+      let previous: string | undefined;
+
+      beforeEach(() => {
+        previous = process.env.TZ;
+        process.env.TZ = zone;
+      });
+
+      afterEach(() => {
+        if (previous === undefined) delete process.env.TZ;
+        else process.env.TZ = previous;
+      });
+
+      it('reads a zone-less value as UTC', () => {
+        const row = parseRow<{ ts: Date }>(columns, ['2022-02-22 22:02:22.123']);
+        expect(row.ts.getTime()).toBe(Date.UTC(2022, 1, 22, 22, 2, 22, 123));
+      });
+
+      it('reads a zone-less ISO value as UTC', () => {
+        const row = parseRow<{ ts: Date }>(columns, ['2022-02-22T22:02:22']);
+        expect(row.ts.getTime()).toBe(Date.UTC(2022, 1, 22, 22, 2, 22));
+      });
+
+      it('keeps an explicit offset', () => {
+        const row = parseRow<{ ts: Date }>(columns, ['2022-02-22T22:02:22+03:00']);
+        expect(row.ts.getTime()).toBe(Date.UTC(2022, 1, 22, 19, 2, 22));
+      });
+    },
+  );
+
+  it('rejects an unparseable timestamp', () => {
+    const columns: ColumnMeta[] = [{ name: 'ts', type: 'timestamp', nullable: false }];
+    expect(() => parseRow(columns, ['not a time'])).toThrow(ColumnParseError);
+  });
+
   it('parses null/empty to null', () => {
     const columns: ColumnMeta[] = [{ name: 'val', type: 'varchar', nullable: true }];
     const row = parseRow<{ val: string | null }>(columns, [undefined]);

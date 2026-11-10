@@ -17,7 +17,7 @@ it came from.
 | `decimal` | `string`, to preserve precision |
 | `boolean` | `boolean` |
 | `date` | `string`, `YYYY-MM-DD` |
-| `timestamp` | `Date` |
+| `timestamp` | `Date`, the zone-less value read as UTC |
 | `json` | `unknown` |
 | `binary`, `varbinary` | `string`, Base64 encoded |
 | `array<T>` | `T[]` |
